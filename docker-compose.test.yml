@@ -1,0 +1,31 @@
+# Docker Compose for test environment
+# Runs a separate MariaDB on port 3307 so tests don't touch the dev database.
+#
+# Usage:
+#   ./run.sh test-db-up     Start test database
+#   ./run.sh test-db-down   Stop test database
+#   ./run.sh test           Run tests against test database
+#
+# Container names use -test suffix to avoid conflicts with dev containers.
+
+version: '3.8'
+
+services:
+  finance-db-test:
+    container_name: finance-db-test
+    image: mariadb:10.11
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: testpass
+      MYSQL_DATABASE: finance_app_test
+      MYSQL_USER: finance_test_user
+      MYSQL_PASSWORD: finance_test_pass
+    tmpfs:
+      - /var/lib/mysql    # RAM-backed storage — fast, disposable between runs
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: "no"

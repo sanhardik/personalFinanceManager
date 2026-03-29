@@ -1,0 +1,12 @@
+# Ignore large/noisy directories that don't help with code context
+node_modules/
+dist/
+.pytest_cache/
+__pycache__/
+*.pyc
+backend/venv/
+backend/data/
+.backend.log
+.frontend.log
+.backend.pid
+.frontend.pid

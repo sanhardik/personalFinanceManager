@@ -1,0 +1,38 @@
+/**
+ * Root application component — defines all routes.
+ *
+ * Uses React Router v6 with a nested layout:
+ * - Layout wraps all pages (sidebar + header + content area)
+ * - Each page is a child route rendered via <Outlet /> in Layout
+ *
+ * Add new pages here as chunks are completed.
+ */
+
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import Layout from './components/Layout/Layout';
+import Dashboard from './pages/Dashboard';
+import Transactions from './pages/Transactions';
+import Categories from './pages/Categories';
+import Rules from './pages/Rules';
+import UploadCSV from './pages/UploadCSV';
+import SettingsPage from './pages/SettingsPage';
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* All pages share the Layout (sidebar + header) */}
+        <Route path="/" element={<Layout />}>
+          <Route index element={<Dashboard />} />
+          <Route path="transactions" element={<Transactions />} />
+          <Route path="categories" element={<Categories />} />
+          <Route path="rules" element={<Rules />} />
+          <Route path="upload" element={<UploadCSV />} />
+          <Route path="settings" element={<SettingsPage />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+export default App;

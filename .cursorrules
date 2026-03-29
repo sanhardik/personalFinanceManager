@@ -1,0 +1,81 @@
+# Personal Finance Manager — Cursor Rules
+# These rules give Claude Code the same context as the Cowork session.
+
+## Project Overview
+You are working on a Personal Finance Manager (PFM) — a full-stack app for tracking
+bank transactions, stock portfolios (Simply Wall St), and investment properties.
+It runs locally on Mac for a single user (Hardik Sanghavi).
+
+## Memory System
+This project uses a two-tier memory system. Always check these before starting work:
+1. **CLAUDE.md** (this directory) — hot cache with terms, decisions, build plan
+2. **memory/** directory — deep context (glossary, project details, existing schema)
+
+Read CLAUDE.md first for every task. If you encounter unfamiliar terms or acronyms,
+check memory/glossary.md before asking.
+
+## Tech Stack
+- **Backend:** Python FastAPI + async SQLAlchemy 2.0 + aiomysql
+- **Frontend:** React (Vite + Recharts + Tailwind CSS), light theme
+- **Database:** MariaDB on port 3306, database name `finance_app`
+- **Docker:** docker-compose in this directory (MariaDB + phpMyAdmin)
+- **Tests:** pytest + pytest-asyncio (backend), Vite build check (frontend)
+
+## Code Standards
+- All Python files must have a module-level docstring explaining purpose
+- All JS/JSX files must have a JSDoc comment block at the top
+- FastAPI routes use async/await with SQLAlchemy async sessions
+- React components are functional with hooks (no class components)
+- Tailwind CSS for all styling (no custom CSS files)
+- Every chunk of work must include tests
+
+## Architecture Rules
+- **Backend serves API only** — no templates, no HTML rendering
+- **No AI API calls in the app** — Cowork handles AI categorisation externally
+- **Pluggable bank parsers** — each bank has its own parser class extending base.py
+- **Dedup via SHA256 hash** of (account_id + tx_date + tx_desc + tx_amount)
+- **CORS enabled** — backend on port 8000, frontend on port 5173
+- **Old code in /src/ is read-only** — never modify it
+
+## Directory Structure
+```
+finance-app/
+├── CLAUDE.md                  # Project memory (read this first!)
+├── memory/                    # Deep memory (glossary, project context)
+├── docker-compose.yml         # MariaDB 3306 + phpMyAdmin 8080
+├── run.sh                     # Start/stop/setup script
+├── backend/
+│   ├── app/
+│   │   ├── main.py            # FastAPI app entry point
+│   │   ├── config.py          # Settings from .env
+│   │   ├── database.py        # Async SQLAlchemy engine
+│   │   ├── models.py          # ORM models (Chunk 2)
+│   │   ├── schemas.py         # Pydantic schemas (Chunk 2)
+│   │   ├── routers/           # API route handlers
+│   │   ├── parsers/           # Bank CSV parsers (ABC pattern)
+│   │   ├── services/          # Business logic layer
+│   │   └── utils/             # Helpers (hashing, CSV utils)
+│   ├── tests/                 # pytest test files
+│   ├── requirements.txt
+│   └── .env                   # DB credentials (local only)
+└── frontend/
+    ├── src/
+    │   ├── App.jsx            # React Router setup
+    │   ├── api/               # Axios API client modules
+    │   ├── components/        # Reusable UI components
+    │   ├── pages/             # Page-level components
+    │   └── hooks/             # Custom React hooks
+    ├── vite.config.js         # Vite + Tailwind + API proxy
+    └── package.json
+```
+
+## Build Plan (Phase 1)
+Check CLAUDE.md for the current status of each chunk. The build follows
+incremental vertical slices — each chunk delivers working backend + frontend + tests.
+
+## Workflow Preferences
+- Ask clarifying questions before making changes
+- Show progress percentage on multi-step tasks
+- Test each piece before moving to the next
+- Update CLAUDE.md after completing each chunk
+- Never skip writing tests
