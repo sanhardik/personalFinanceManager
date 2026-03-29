@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+backend/venv/
+.pytest_cache/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Logs
+logs/
+
+# Environment (keep .env.test — it has no real secrets)
+backend/.env
+
+# Old dev artifacts
+.backend.log
+.frontend.log
+.backend.pid
+.frontend.pid
+git-setup.sh
+
+# OS
+.DS_Store
+Thumbs.db
