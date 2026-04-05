@@ -2,7 +2,7 @@
 SQLAlchemy ORM models for Personal Finance Manager.
 
 Tables:
-- accounts: Bank accounts (Westpac, NAB, Macquarie)
+- accounts: Bank accounts, credit cards, home loans
 - categories: Transaction categories (Groceries, Salary, etc.)
 - transactions: Bank transactions linked to accounts and categories
 - rules: Auto-categorisation rules (pattern → category)
@@ -29,7 +29,17 @@ from app.database import Base
 
 
 class Account(Base):
-    """Bank account — one per BSB/account combination."""
+    """
+    Bank account, credit card, or home loan.
+
+    account_type values:
+      - "bank"        — transaction/savings account
+      - "credit_card" — credit card (last 4 digits as account_number)
+      - "home_loan"   — mortgage / home loan
+
+    linked_account_id: optional FK to the bank account that pays this
+    account (e.g. home loan paid from a bank account).
+    """
 
     __tablename__ = "accounts"
 
@@ -37,18 +47,29 @@ class Account(Base):
     account_number: Mapped[str] = mapped_column(String(256), unique=True, nullable=False)
     account_name: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     bank_name: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    account_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="bank"
+    )  # "bank", "credit_card", "home_loan"
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    linked_account_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("accounts.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
 
     # Relationships
     transactions: Mapped[list["Transaction"]] = relationship(
-        back_populates="account", cascade="all, delete-orphan"
+        back_populates="account",
+        cascade="all, delete-orphan",
+        foreign_keys="Transaction.account_id",
+    )
+    linked_account: Mapped["Account | None"] = relationship(
+        "Account", remote_side="Account.id", foreign_keys=[linked_account_id]
     )
 
     def __repr__(self) -> str:
-        return f"<Account {self.account_number} ({self.bank_name})>"
+        return f"<Account {self.account_number} ({self.bank_name} {self.account_type})>"
 
 
 class Category(Base):
@@ -101,6 +122,12 @@ class Transaction(Base):
     tx_hash: Mapped[str] = mapped_column(
         String(64), unique=True, nullable=False
     )  # SHA256 dedup hash
+    balance: Mapped[float | None] = mapped_column(
+        Float(precision=2), nullable=True
+    )  # Balance after this transaction
+    original_category: Mapped[str | None] = mapped_column(
+        String(100), nullable=True
+    )  # Category from bank CSV (e.g. "PAYMENT", "DEP", "OTHER")
     is_categorised: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False

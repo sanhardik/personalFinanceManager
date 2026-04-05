@@ -17,6 +17,7 @@ import {
   BookOpen,
   Upload,
   Settings,
+  Landmark,
 } from 'lucide-react';
 
 /**
@@ -26,6 +27,7 @@ import {
  */
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/accounts', label: 'Accounts', icon: Landmark },
   { to: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
   { to: '/categories', label: 'Categories', icon: Tags },
   { to: '/rules', label: 'Rules', icon: BookOpen },
