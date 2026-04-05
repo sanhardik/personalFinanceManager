@@ -61,9 +61,9 @@ Hardik Sanghavi (hardik.sanghavi@permaconn.com). Building a personal finance man
 |-------|------|--------|
 | 1 | Skeleton: Docker + FastAPI + React + CLAUDE.md + memory | Done |
 | 2 | Database models + seed categories + Categories page | Done |
-| 3 | Westpac CSV parser + upload + Transactions table | Next |
-| 4 | Transaction filters + search + pagination | Planning |
-| 5 | Rules + manual categorisation + PATCH /transactions | Planning |
+| 3 | Westpac CSV parser + upload + Transactions table | Done |
+| 4 | Transaction filters + search + pagination | Done |
+| 5 | Rules + manual categorisation + PATCH /transactions | Next |
 | 6 | Dashboard + Reports (charts, net worth, recent txns) | Planning |
 | 7 | NAB parser + auto-detection | Blocked (need sample CSV) |
 | 8 | Macquarie parser | Blocked (need sample CSV) |
@@ -96,15 +96,6 @@ Hardik Sanghavi (hardik.sanghavi@permaconn.com). Building a personal finance man
 - `.cursorrules` — Project rules for Cursor IDE
 - `.cursorignore` — Excludes node_modules, venv, dist, __pycache__
 
-## Chunk 2 — Definition of Done (NEXT)
-- SQLAlchemy models for: accounts, categories, transactions, rules
-- Auto-create tables on app startup
-- Seed default Australian categories (Groceries, Utilities, Rent, Salary, etc.)
-- GET /categories and POST /categories endpoints
-- Frontend Categories page showing list + create form
-- Tests for models + category endpoints
-- Update this CLAUDE.md with Chunk 2 status
-
 ## Chunk 2 — What Was Built (DONE)
 ### Backend
 - `app/models.py` — SQLAlchemy ORM models: Account, Category, Transaction, Rule
@@ -128,6 +119,37 @@ Hardik Sanghavi (hardik.sanghavi@permaconn.com). Building a personal finance man
 
 ### Dependencies Added
 - `aiosqlite==0.22.0` in requirements.txt (testing only)
+
+## Chunk 3 — What Was Built (DONE)
+### Backend
+- `app/parsers/base.py` — Abstract `BankParser` base class + `ParsedTransaction` / `ParseResult` dataclasses
+- `app/parsers/registry.py` — `detect_parser(header)` auto-detects bank from CSV header; `get_supported_banks()`
+- `app/parsers/westpac.py` — Westpac CSV parser: DD/MM/YYYY dates, debit/credit cols, credit card vs bank account detection
+- `app/services/upload.py` — Orchestrates parse → account upsert → transaction insert with SHA256 dedup
+- `app/routers/upload.py` — `POST /upload` (file), `GET /upload/banks`
+- `app/routers/accounts.py` — `GET /accounts`, `POST /accounts`, `GET /accounts/summary`, `GET/PUT /accounts/{id}`
+- `app/models.py` — Updated `Account` (account_type: bank/credit_card/home_loan, linked_account_id), `Transaction` (balance, original_category)
+- `app/schemas.py` — Added `AccountCreate`, `AccountUpdate`, `UploadResponse`
+
+### Frontend
+- `src/api/accounts.js` — `fetchAccounts`, `fetchAccountsSummary`, `createAccount`, `updateAccount`
+- `src/api/transactions.js` — `fetchTransactions({accountId, txType, search, page, perPage})`
+- `src/api/upload.js` — `uploadCSV(file)`, `fetchSupportedBanks()`
+- `src/pages/Accounts.jsx` — Accounts list grouped by bank, create/edit inline, account type badges
+- `src/pages/Transactions.jsx` — Table with AUD formatting, category status column
+- `src/pages/UploadCSV.jsx` — Drag-drop upload, result display (inserted/duplicates/accounts found)
+
+### Tests (35 total — all passing)
+- `tests/test_westpac_parser.py` — 16 unit tests: header detection, expense/income, dates, account types, edge cases
+- `tests/test_upload.py` — 13 integration tests: upload, dedup, account creation, account summary, transactions list
+- `tests/conftest.py` — Updated to real MariaDB on port 3307; `NullPool` to avoid event loop issues; `truncate_data` autouse fixture for test isolation
+
+## Chunk 4 — What Was Built (DONE)
+Implemented as part of Chunk 3 inside `app/routers/transactions.py`:
+- `GET /transactions` with filters: `account_id`, `tx_type` (Income/Expense), `search` (LIKE on tx_desc)
+- Pagination: `page` + `per_page` (max 200), returns `total`, `pages`, `items`
+- Orders by `tx_date DESC, id DESC` for deterministic results
+- Frontend `Transactions.jsx` has debounced search (300ms), account dropdown, type filter tabs, page controls
 
 ## How to Run
 ```bash

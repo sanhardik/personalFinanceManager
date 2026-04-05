@@ -28,7 +28,10 @@ from app.database import (
 # Import models so SQLAlchemy knows about them before create_tables()
 import app.models  # noqa: F401
 
+from app.routers.accounts import router as accounts_router
 from app.routers.categories import router as categories_router
+from app.routers.transactions import router as transactions_router
+from app.routers.upload import router as upload_router
 from app.services.seed import seed_default_categories
 
 logger = logging.getLogger(__name__)
@@ -75,7 +78,10 @@ app.add_middleware(
 )
 
 # ── Register routers ─────────────────────────────────────────
+app.include_router(accounts_router)
 app.include_router(categories_router)
+app.include_router(transactions_router)
+app.include_router(upload_router)
 
 
 @app.get("/health")

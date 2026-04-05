@@ -20,6 +20,7 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy import text
+from sqlalchemy.pool import NullPool
 
 from app.database import Base
 from app.services.seed import seed_default_categories
@@ -58,9 +59,7 @@ def test_engine():
     engine = create_async_engine(
         TEST_DATABASE_URL,
         echo=False,
-        pool_size=5,
-        max_overflow=10,
-        pool_recycle=1800,
+        poolclass=NullPool,
     )
     return engine
 
@@ -75,7 +74,7 @@ def test_session_factory(test_engine):
     )
 
 
-@pytest.fixture(autouse=True, scope="session")
+@pytest.fixture(scope="session")
 async def setup_test_database(test_engine):
     """
     Session-scoped fixture: drop all tables, recreate them, seed defaults.
@@ -129,6 +128,16 @@ async def db_session(test_session_factory):
         yield session
         # Roll back any uncommitted changes from this test
         await session.rollback()
+
+
+@pytest.fixture(autouse=True)
+async def truncate_data(test_session_factory, setup_test_database):
+    """Truncate transactions and accounts before each test for isolation."""
+    async with test_session_factory() as session:
+        await session.execute(text("DELETE FROM transactions"))
+        await session.execute(text("DELETE FROM accounts"))
+        await session.commit()
+    yield
 
 
 @pytest.fixture

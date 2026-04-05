@@ -10,6 +10,7 @@
 
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout/Layout';
+import Accounts from './pages/Accounts';
 import Dashboard from './pages/Dashboard';
 import Transactions from './pages/Transactions';
 import Categories from './pages/Categories';
@@ -24,6 +25,7 @@ function App() {
         {/* All pages share the Layout (sidebar + header) */}
         <Route path="/" element={<Layout />}>
           <Route index element={<Dashboard />} />
+          <Route path="accounts" element={<Accounts />} />
           <Route path="transactions" element={<Transactions />} />
           <Route path="categories" element={<Categories />} />
           <Route path="rules" element={<Rules />} />
