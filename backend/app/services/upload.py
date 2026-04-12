@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Account, Transaction
 from app.parsers.base import ParseResult
 from app.parsers.registry import detect_parser
+from app.services.categoriser import apply_rules_to_transactions
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,13 @@ async def process_csv_upload(content: str, db: AsyncSession) -> UploadResult:
     except IntegrityError as e:
         await db.rollback()
         errors.append(f"Database error: {str(e)[:200]}")
+
+    # Auto-apply categorisation rules to newly inserted transactions
+    if inserted > 0:
+        try:
+            await apply_rules_to_transactions(db)
+        except Exception as e:
+            logger.warning("Could not apply rules after upload: %s", e)
 
     logger.info(
         "Upload complete: %s — %d inserted, %d duplicates, %d errors",

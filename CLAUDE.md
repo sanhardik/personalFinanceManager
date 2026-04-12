@@ -63,8 +63,8 @@ Hardik Sanghavi (hardik.sanghavi@permaconn.com). Building a personal finance man
 | 2 | Database models + seed categories + Categories page | Done |
 | 3 | Westpac CSV parser + upload + Transactions table | Done |
 | 4 | Transaction filters + search + pagination | Done |
-| 5 | Rules + manual categorisation + PATCH /transactions | Next |
-| 6 | Dashboard + Reports (charts, net worth, recent txns) | Planning |
+| 5 | Rules + manual categorisation + PATCH /transactions | Done |
+| 6 | Dashboard + Reports (charts, net worth, recent txns) | Next |
 | 7 | NAB parser + auto-detection | Blocked (need sample CSV) |
 | 8 | Macquarie parser | Blocked (need sample CSV) |
 
@@ -143,6 +143,42 @@ Hardik Sanghavi (hardik.sanghavi@permaconn.com). Building a personal finance man
 - `tests/test_westpac_parser.py` — 16 unit tests: header detection, expense/income, dates, account types, edge cases
 - `tests/test_upload.py` — 13 integration tests: upload, dedup, account creation, account summary, transactions list
 - `tests/conftest.py` — Updated to real MariaDB on port 3307; `NullPool` to avoid event loop issues; `truncate_data` autouse fixture for test isolation
+
+## Chunk 5 — What Was Built (DONE)
+### Backend
+- `app/services/categoriser.py` — `apply_rules_to_transactions()`: case-insensitive pattern matching, first rule wins, applies to uncategorised transactions
+- `app/routers/rules.py` — CRUD + `POST /rules/apply` + `GET /rules/{id}/affected` + `POST /rules/{id}/recategorise` + suggestion endpoints
+  - `GET /rules/suggestions` — pending rule suggestions sorted by hit_count DESC
+  - `POST /rules/suggestions/{id}/accept` — promote suggestion to real rule
+  - `POST /rules/suggestions/{id}/dismiss` — mark as dismissed
+- `app/routers/transactions.py` — `PATCH /transactions/{id}` for manual category override; `POST /transactions/bulk-categorise`; rule learning after every PATCH
+- `app/schemas.py` — Full schemas: Rules, Transactions, `SuggestedRuleHint`, `SuggestedRuleResponse`
+- `app/services/seed.py` — `seed_default_rules()` with 50+ Australian merchant patterns
+- `app/services/pattern_extractor.py` — Extracts merchant pattern from tx_desc (first meaningful uppercase token ≥3 chars, skipping boilerplate)
+- `app/models.py` — Added `SuggestedRule` model (pattern, category_id, hit_count, status, source_tx_ids, promoted_rule_id)
+- `app/services/upload.py` — Auto-applies rules after every upload
+
+### Rule Learning System (Options A, B, C)
+- **Option A** — After PATCH, backend extracts pattern + upserts `suggested_rules`; PATCH response includes `rule_suggestion` hint; frontend shows purple "Create rule?" banner
+- **Option B** — When `hit_count >= 3`, suggestion auto-promoted to real rule; frontend shows green "Rule auto-created" toast
+- **Option C** — Violet "Suggested Rules" panel at top of Rules page; shows pending suggestions with hit count; Accept/Dismiss per-row buttons
+
+### DB Migration (applied to dev DB)
+- `ALTER TABLE accounts ADD COLUMN account_type, linked_account_id` (were missing post-Chunk 3)
+- `ALTER TABLE transactions ADD COLUMN balance, original_category` (same issue)
+- `suggested_rules` table auto-created by `create_all()` on next startup (no migration needed)
+
+### Frontend
+- `src/api/rules.js` — Added `fetchSuggestions`, `acceptSuggestion`, `dismissSuggestion`
+- `src/api/transactions.js` — Added `patchTransaction`, `bulkCategorise`
+- `src/pages/Rules.jsx` — Full rules management + recategorise confirmation panel + search + Option C suggestions panel
+- `src/pages/Transactions.jsx` — Category column inline edit + similar-tx bulk-apply banner + Option A rule suggestion prompt
+- `src/pages/Categories.jsx` — Colour picker, parent categories, hierarchy display
+- `src/utils/categoryGroups.js` — `groupCategories()`, `CategoryOptions` component for grouped `<optgroup>` dropdowns
+
+### Tests (73 passed, 5 skipped — all green)
+- `tests/test_rules.py` — 14 tests: CRUD, apply, affected, recategorise, PATCH transaction
+- `tests/test_suggestions.py` — 15 tests: pattern extractor unit tests, suggestion lifecycle, accept/dismiss
 
 ## Chunk 4 — What Was Built (DONE)
 Implemented as part of Chunk 3 inside `app/routers/transactions.py`:

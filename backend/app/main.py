@@ -30,9 +30,10 @@ import app.models  # noqa: F401
 
 from app.routers.accounts import router as accounts_router
 from app.routers.categories import router as categories_router
+from app.routers.rules import router as rules_router
 from app.routers.transactions import router as transactions_router
 from app.routers.upload import router as upload_router
-from app.services.seed import seed_default_categories
+from app.services.seed import seed_default_categories, seed_default_rules
 
 logger = logging.getLogger(__name__)
 
@@ -48,12 +49,14 @@ async def lifespan(app: FastAPI):
     # Startup — ensure all ORM tables exist in MariaDB
     await create_tables()
 
-    # Seed default categories (idempotent — skips existing)
+    # Seed default categories + rules (idempotent — skips existing)
     try:
         async with async_session_factory() as session:
             await seed_default_categories(session)
+        async with async_session_factory() as session:
+            await seed_default_rules(session)
     except Exception as e:
-        logger.warning("Could not seed categories (DB might be unavailable): %s", e)
+        logger.warning("Could not seed defaults (DB might be unavailable): %s", e)
 
     yield
     # Shutdown — cleanly release the connection pool
@@ -80,6 +83,7 @@ app.add_middleware(
 # ── Register routers ─────────────────────────────────────────
 app.include_router(accounts_router)
 app.include_router(categories_router)
+app.include_router(rules_router)
 app.include_router(transactions_router)
 app.include_router(upload_router)
 
