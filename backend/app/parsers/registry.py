@@ -6,12 +6,13 @@ reads the CSV header and returns the appropriate parser.
 """
 
 from app.parsers.base import BankParser
+from app.parsers.nab import NABParser
 from app.parsers.westpac import WestpacParser
 
 # Register all parsers here — order matters (first match wins)
 PARSERS: list[BankParser] = [
     WestpacParser(),
-    # NABParser(),       — Chunk 7
+    NABParser(),
     # MacquarieParser(), — Chunk 8
 ]
 

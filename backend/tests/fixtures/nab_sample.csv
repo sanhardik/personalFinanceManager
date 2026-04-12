@@ -1,0 +1,5 @@
+Date,Amount,Account Number,,Transaction Type,Transaction Details,Balance,Category,Merchant Name,Processed On
+10 Apr 26,12.00,701314870,,TRANSFER CREDIT,CARLA M NICHOLLSEarly learning books,31024.17,Transfers in,,10 Apr 26
+07 Apr 26,-300.00,701314870,,TRANSFER DEBIT,INTERNET TRANSFER Funds trns,31012.17,Transfers out,,07 Apr 26
+07 Apr 26,-555.56,701314870,,TRANSFER DEBIT,ONLINE C5528869017 Funds trns SANGHAVI VEN,31312.17,Internal transfers,,07 Apr 26
+07 Apr 26,300.00,701314870,,INTER-BANK CREDIT,HARDIK SANGHAVI THE TRUSTEE FOR,31867.73,Transfers in,,07 Apr 26

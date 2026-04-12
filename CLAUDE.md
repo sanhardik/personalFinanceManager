@@ -65,7 +65,7 @@ Hardik Sanghavi (hardik.sanghavi@permaconn.com). Building a personal finance man
 | 4 | Transaction filters + search + pagination | Done |
 | 5 | Rules + manual categorisation + PATCH /transactions | Done |
 | 6 | Dashboard + Reports (charts, net worth, recent txns) | Next |
-| 7 | NAB parser + auto-detection | Blocked (need sample CSV) |
+| 7 | NAB parser + auto-detection | Done |
 | 8 | Macquarie parser | Blocked (need sample CSV) |
 
 ## Chunk 1 — What Was Built (DONE)
@@ -179,6 +179,29 @@ Hardik Sanghavi (hardik.sanghavi@permaconn.com). Building a personal finance man
 ### Tests (73 passed, 5 skipped — all green)
 - `tests/test_rules.py` — 14 tests: CRUD, apply, affected, recategorise, PATCH transaction
 - `tests/test_suggestions.py` — 15 tests: pattern extractor unit tests, suggestion lifecycle, accept/dismiss
+
+## Chunk 7 — What Was Built (DONE)
+### NAB CSV Format
+| Column | Notes |
+|--------|-------|
+| Date | `DD Mon YY` (e.g. `10 Apr 26`) |
+| Amount | Signed float — negative = expense, positive = income |
+| Account Number | 6-10 digit bank account number |
+| (blank) | 4th column always empty in NAB exports |
+| Transaction Type | TRANSFER CREDIT, TRANSFER DEBIT, INTER-BANK CREDIT, etc. |
+| Transaction Details | Free-text description (used as tx_desc) |
+| Balance | Running balance |
+| Category | NAB's own label (Transfers in, Transfers out, etc.) |
+| Merchant Name | Usually empty |
+| Processed On | Settlement date |
+
+### Backend
+- `app/parsers/nab.py` — NABParser: detects header by requiring Date, Amount, Account Number, Transaction Type, Transaction Details; parses `DD Mon YY` dates; positive amount → Income, negative → Expense
+- `app/parsers/registry.py` — NABParser registered (Westpac first, NAB second)
+- `tests/fixtures/nab_sample.csv` — 4-row fixture from real NAB export
+- `tests/test_nab_parser.py` — 22 tests: header detection, amounts, dates, balance, dedup, upload integration
+
+### Tests (95 passed, 5 skipped — all green)
 
 ## Chunk 4 — What Was Built (DONE)
 Implemented as part of Chunk 3 inside `app/routers/transactions.py`:
