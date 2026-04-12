@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Tags, Plus, Trash2, Edit2, X, Check, Loader2, ChevronRight } from 'lucide-react';
 import { fetchCategories, createCategory, deleteCategory, updateCategory } from '../api/categories';
 import { groupCategories } from '../utils/categoryGroups.jsx';
+import { SortableHeader } from '../components/SortableHeader';
+import { useSortable } from '../hooks/useSortable';
 
 const TYPE_BADGE = {
   Expense: 'bg-red-100 text-red-700',
@@ -28,6 +30,8 @@ export default function Categories() {
   const [editType, setEditType] = useState('');
   const [editColour, setEditColour] = useState('');
   const [editParentId, setEditParentId] = useState('');
+
+  const { sort, onSort, sortData } = useSortable('name', 'asc');
 
   const load = useCallback(async () => {
     try {
@@ -127,6 +131,13 @@ export default function Categories() {
       }
     }
   }
+
+  const accessors = {
+    name: r => r.cat.name,
+    parent: r => r.cat.parent_name || '',
+    type: r => r.cat.category_type,
+  };
+  const sortedRows = sortData(rows, accessors);
 
   const expenseCount = categories.filter(c => c.category_type === 'Expense').length;
   const incomeCount = categories.filter(c => c.category_type === 'Income').length;
@@ -228,15 +239,15 @@ export default function Categories() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Name</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Parent</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Type</th>
+                <SortableHeader label="Name" column="name" sort={sort} onSort={onSort} />
+                <SortableHeader label="Parent" column="parent" sort={sort} onSort={onSort} />
+                <SortableHeader label="Type" column="type" sort={sort} onSort={onSort} />
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Colour</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-500">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ cat, isParent, isChild, hasChildren }) => (
+              {sortedRows.map(({ cat, isParent, isChild, hasChildren }) => (
                 <tr key={cat.id}
                   className={`border-b border-gray-50 hover:bg-gray-50 transition-colors ${isParent ? 'bg-gray-50/60' : ''}`}>
 

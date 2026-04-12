@@ -9,7 +9,7 @@ Routes:
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, asc, desc
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,6 +34,8 @@ async def list_transactions(
     tx_type: str | None = Query(default=None, pattern="^(Income|Expense)$"),
     search: str | None = Query(default=None, description="Search in description"),
     categorised: bool | None = Query(default=None, description="Filter by categorised status"),
+    sort_by: str = Query(default="tx_date", pattern="^(tx_date|tx_amount|tx_desc|tx_type)$"),
+    sort_dir: str = Query(default="desc", pattern="^(asc|desc)$"),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -59,8 +61,17 @@ async def list_transactions(
     total_result = await db.execute(count_stmt)
     total = total_result.scalar() or 0
 
+    col_map = {
+        "tx_date": Transaction.tx_date,
+        "tx_amount": Transaction.tx_amount,
+        "tx_desc": Transaction.tx_desc,
+        "tx_type": Transaction.tx_type,
+    }
+    sort_col = col_map[sort_by]
+    order_expr = asc(sort_col) if sort_dir == "asc" else desc(sort_col)
+
     offset = (page - 1) * per_page
-    stmt = stmt.order_by(desc(Transaction.tx_date), desc(Transaction.id))
+    stmt = stmt.order_by(order_expr, desc(Transaction.id))
     stmt = stmt.offset(offset).limit(per_page)
 
     result = await db.execute(stmt)

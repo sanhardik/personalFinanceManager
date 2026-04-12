@@ -5,6 +5,8 @@ import { fetchAccounts } from '../api/accounts';
 import { fetchCategories } from '../api/categories';
 import { acceptSuggestion, dismissSuggestion } from '../api/rules';
 import { CategoryOptions } from '../utils/categoryGroups.jsx';
+import { SortableHeader } from '../components/SortableHeader';
+import { useSortable } from '../hooks/useSortable';
 
 export default function Transactions() {
   const [transactions, setTransactions] = useState([]);
@@ -18,6 +20,9 @@ export default function Transactions() {
   const [txType, setTxType] = useState('');
   const [search, setSearch] = useState('');
   const [searchDebounce, setSearchDebounce] = useState('');
+
+  // Sort state
+  const { sort, onSort } = useSortable('tx_date', 'desc');
 
   // Inline category edit
   const [editingCategoryTxId, setEditingCategoryTxId] = useState(null);
@@ -44,6 +49,8 @@ export default function Transactions() {
         accountId: accountId || undefined,
         txType: txType || undefined,
         search: searchDebounce || undefined,
+        sortBy: sort.column,
+        sortDir: sort.dir,
         page,
       });
       setTransactions(data.items);
@@ -53,7 +60,7 @@ export default function Transactions() {
     } finally {
       setLoading(false);
     }
-  }, [accountId, txType, searchDebounce]);
+  }, [accountId, txType, searchDebounce, sort]);
 
   useEffect(() => { loadTransactions(1); }, [loadTransactions]);
 
@@ -282,10 +289,10 @@ export default function Transactions() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="text-left px-4 py-3 font-medium text-gray-500">Date</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-500">Description</th>
+                  <SortableHeader label="Date" column="tx_date" sort={sort} onSort={(col) => { onSort(col); loadTransactions(1); }} />
+                  <SortableHeader label="Description" column="tx_desc" sort={sort} onSort={(col) => { onSort(col); loadTransactions(1); }} />
                   <th className="text-left px-4 py-3 font-medium text-gray-500">Account</th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-500">Amount</th>
+                  <SortableHeader label="Amount" column="tx_amount" sort={sort} onSort={(col) => { onSort(col); loadTransactions(1); }} align="right" />
                   <th className="text-right px-4 py-3 font-medium text-gray-500">Balance</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-500">Category</th>
                 </tr>
