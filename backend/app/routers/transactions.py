@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Category, Rule, SuggestedRule, Transaction
+from app.models import Account, Category, Rule, SuggestedRule, Transaction
 from app.schemas import BulkCategoriseRequest, BulkCategoriseResponse, TransactionPatchResponse, TransactionResponse, TransactionUpdate
 from app.services.pattern_extractor import AUTO_PROMOTE_THRESHOLD, extract_merchant_pattern
 
@@ -22,9 +22,10 @@ router = APIRouter(prefix="/transactions", tags=["transactions"])
 
 
 def _tx_to_response(tx: Transaction) -> dict:
-    """Build a TransactionResponse dict including category_name from the loaded relationship."""
+    """Build a TransactionResponse dict including computed relationship fields."""
     data = TransactionResponse.model_validate(tx).model_dump()
     data["category_name"] = tx.category.name if tx.category else None
+    data["transfer_account_name"] = tx.transfer_account.account_name if tx.transfer_account else None
     return data
 
 
@@ -41,7 +42,10 @@ async def list_transactions(
     db: AsyncSession = Depends(get_db),
 ):
     """List transactions with optional filters and pagination."""
-    stmt = select(Transaction).options(selectinload(Transaction.category))
+    stmt = select(Transaction).options(
+        selectinload(Transaction.category),
+        selectinload(Transaction.transfer_account),
+    )
     count_stmt = select(func.count(Transaction.id))
 
     if account_id:
@@ -99,7 +103,9 @@ async def patch_transaction(
     - Pass category_id=null to remove the category → marks is_categorised=False
     """
     result = await db.execute(
-        select(Transaction).options(selectinload(Transaction.category)).where(Transaction.id == tx_id)
+        select(Transaction)
+        .options(selectinload(Transaction.category), selectinload(Transaction.transfer_account))
+        .where(Transaction.id == tx_id)
     )
     tx = result.scalar_one_or_none()
     if not tx:
@@ -112,13 +118,25 @@ async def patch_transaction(
                 raise HTTPException(status_code=404, detail="Category not found")
         tx.category_id = body.category_id
         tx.is_categorised = body.category_id is not None
+        # Clear transfer account when category is removed or changed to non-transfer
+        if body.category_id is None:
+            tx.transfer_account_id = None
+
+    if "transfer_account_id" in body.model_fields_set:
+        if body.transfer_account_id is not None:
+            acc = await db.get(Account, body.transfer_account_id)
+            if not acc:
+                raise HTTPException(status_code=404, detail="Transfer account not found")
+        tx.transfer_account_id = body.transfer_account_id
 
     await db.commit()
 
-    # Expire the cached relationship so the reload fetches the updated category
-    db.expire(tx, ["category"])
+    # Expire cached relationships so reload fetches updated values
+    db.expire(tx, ["category", "transfer_account"])
     result = await db.execute(
-        select(Transaction).options(selectinload(Transaction.category)).where(Transaction.id == tx_id)
+        select(Transaction)
+        .options(selectinload(Transaction.category), selectinload(Transaction.transfer_account))
+        .where(Transaction.id == tx_id)
     )
     tx = result.scalar_one()
     response = _tx_to_response(tx)

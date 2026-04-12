@@ -18,11 +18,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from sqlalchemy import text
+
 from app.database import (
     async_session_factory,
     check_db_connection,
     create_tables,
     dispose_engine,
+    engine,
 )
 
 # Import models so SQLAlchemy knows about them before create_tables()
@@ -48,6 +51,23 @@ async def lifespan(app: FastAPI):
     """
     # Startup — ensure all ORM tables exist in MariaDB
     await create_tables()
+
+    # Schema migrations — add columns that create_all can't add to existing tables
+    try:
+        async with engine.begin() as conn:
+            exists = await conn.execute(text(
+                "SELECT COUNT(*) FROM information_schema.COLUMNS "
+                "WHERE TABLE_SCHEMA = DATABASE() "
+                "AND TABLE_NAME = 'transactions' "
+                "AND COLUMN_NAME = 'transfer_account_id'"
+            ))
+            if exists.scalar() == 0:
+                await conn.execute(text(
+                    "ALTER TABLE transactions ADD COLUMN transfer_account_id INT NULL"
+                ))
+                logger.info("Migration: added transfer_account_id to transactions")
+    except Exception as e:
+        logger.warning("Migration check failed (non-fatal): %s", e)
 
     # Seed default categories + rules (idempotent — skips existing)
     try:

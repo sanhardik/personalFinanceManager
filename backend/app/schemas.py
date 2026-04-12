@@ -102,6 +102,8 @@ class TransactionResponse(BaseModel):
     balance: float | None
     original_category: str | None
     is_categorised: bool
+    transfer_account_id: int | None = None
+    transfer_account_name: str | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -125,8 +127,9 @@ class TransactionPatchResponse(TransactionResponse):
 
 
 class TransactionUpdate(BaseModel):
-    """PATCH /transactions/{id} — update category manually."""
+    """PATCH /transactions/{id} — update category and optional transfer account."""
     category_id: int | None = None
+    transfer_account_id: int | None = None
 
 
 class BulkCategoriseRequest(BaseModel):
