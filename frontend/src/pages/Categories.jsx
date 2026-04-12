@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Tags, Plus, Trash2, Edit2, X, Check, Loader2, ChevronRight } from 'lucide-react';
 import { fetchCategories, createCategory, deleteCategory, updateCategory } from '../api/categories';
-import { groupCategories } from '../utils/categoryGroups';
+import { groupCategories } from '../utils/categoryGroups.jsx';
 
 const TYPE_BADGE = {
   Expense: 'bg-red-100 text-red-700',
