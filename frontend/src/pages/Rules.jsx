@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Wand2, Plus, Trash2, Edit2, X, Check, Loader2, Play, Search, AlertTriangle, ArrowRight, Sparkles, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { fetchRules, createRule, updateRule, deleteRule, applyRules, fetchAffected, recategoriseByRule, fetchSuggestions, acceptSuggestion, dismissSuggestion } from '../api/rules';
 import { fetchCategories } from '../api/categories';
-import { CategoryOptions } from '../utils/categoryGroups';
+import { CategoryOptions } from '../utils/categoryGroups.jsx';
 
 const formatAmount = (v) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(v);
 const formatDate = (d) => new Date(d).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' });

@@ -4,7 +4,7 @@ import { fetchTransactions, patchTransaction, bulkCategorise } from '../api/tran
 import { fetchAccounts } from '../api/accounts';
 import { fetchCategories } from '../api/categories';
 import { acceptSuggestion, dismissSuggestion } from '../api/rules';
-import { CategoryOptions } from '../utils/categoryGroups';
+import { CategoryOptions } from '../utils/categoryGroups.jsx';
 
 export default function Transactions() {
   const [transactions, setTransactions] = useState([]);
