@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ArrowLeftRight, Search, ChevronLeft, ChevronRight, Loader2, CheckCircle2, X, Sparkles } from 'lucide-react';
+import { ArrowLeftRight, Search, ChevronLeft, ChevronRight, Loader2, CheckCircle2, X, Sparkles, ArrowRight, Check } from 'lucide-react';
 import { fetchTransactions, patchTransaction, bulkCategorise } from '../api/transactions';
 import { fetchAccounts } from '../api/accounts';
 import { fetchCategories } from '../api/categories';
@@ -26,6 +26,9 @@ export default function Transactions() {
 
   // Inline category edit
   const [editingCategoryTxId, setEditingCategoryTxId] = useState(null);
+  const [awaitingTransferAccount, setAwaitingTransferAccount] = useState(false);
+  const [pendingCategoryId, setPendingCategoryId] = useState(null);
+  const [pendingTransferAccountId, setPendingTransferAccountId] = useState('');
   const selectRef = useRef(null);
 
   // Similar transaction suggestion (bulk apply)
@@ -74,49 +77,67 @@ export default function Transactions() {
     if (!editingCategoryTxId) return;
     const handler = (e) => {
       if (selectRef.current && !selectRef.current.contains(e.target)) {
-        setEditingCategoryTxId(null);
+        // If awaiting transfer account selection, save with whatever is picked
+        if (awaitingTransferAccount && pendingCategoryId) {
+          saveCategoryChange(editingCategoryTxId, pendingCategoryId, pendingTransferAccountId || null);
+        } else {
+          setEditingCategoryTxId(null);
+        }
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [editingCategoryTxId]);
+  }, [editingCategoryTxId, awaitingTransferAccount, pendingCategoryId, pendingTransferAccountId]);
 
-  const handleCategoryChange = async (txId, categoryId) => {
-    const value = categoryId === '' ? null : parseInt(categoryId);
+  const isTransferCategory = (catId) => {
+    const cat = categories.find(c => c.id === catId);
+    return cat?.name?.toLowerCase().includes('transfer') ?? false;
+  };
+
+  const saveCategoryChange = async (txId, categoryId, transferAccountId) => {
     setSuggestion(null);
     setRuleSuggestion(null);
     try {
-      const updated = await patchTransaction(txId, { category_id: value });
+      const body = { category_id: categoryId, transfer_account_id: transferAccountId ? parseInt(transferAccountId) : null };
+      const updated = await patchTransaction(txId, body);
       setTransactions(prev => prev.map(tx => tx.id === txId ? { ...tx, ...updated } : tx));
 
-      // Option A: show rule suggestion prompt if returned
+      // Option A: rule suggestion prompt
       if (updated.rule_suggestion && !updated.rule_suggestion.auto_promoted) {
         setRuleSuggestion(updated.rule_suggestion);
       } else if (updated.rule_suggestion?.auto_promoted) {
-        // Auto-promoted — brief success toast via ruleSuggestion with auto_promoted flag
         setRuleSuggestion(updated.rule_suggestion);
         setTimeout(() => setRuleSuggestion(null), 4000);
       }
 
-      // If similar uncategorised transactions found, show suggestion banner
-      if (value && updated.similar_uncategorised > 0) {
-        // Fetch those similar transactions to get their IDs
+      // Similar transactions banner
+      if (categoryId && updated.similar_uncategorised > 0) {
         const similar = await fetchTransactions({ search: updated.similar_prefix, categorised: false });
         const ids = similar.items.filter(t => t.id !== txId).map(t => t.id);
         if (ids.length > 0) {
-          setSuggestion({
-            categoryId: value,
-            categoryName: updated.category_name,
-            prefix: updated.similar_prefix,
-            count: ids.length,
-            ids,
-          });
+          setSuggestion({ categoryId, categoryName: updated.category_name, prefix: updated.similar_prefix, count: ids.length, ids });
         }
       }
     } catch (err) {
       console.error('Failed to update category:', err);
     } finally {
       setEditingCategoryTxId(null);
+      setAwaitingTransferAccount(false);
+      setPendingCategoryId(null);
+      setPendingTransferAccountId('');
+    }
+  };
+
+  const handleCategorySelect = (txId, categoryId) => {
+    const value = categoryId === '' ? null : parseInt(categoryId);
+    if (value && isTransferCategory(value)) {
+      // Stay in edit mode — let user pick the linked account
+      setPendingCategoryId(value);
+      setAwaitingTransferAccount(true);
+    } else {
+      // Non-transfer: save immediately (clear any previous transfer account too)
+      setAwaitingTransferAccount(false);
+      saveCategoryChange(txId, value, null);
     }
   };
 
@@ -313,36 +334,63 @@ export default function Transactions() {
                     </td>
                     <td className="px-4 py-3">
                       {editingCategoryTxId === tx.id ? (
-                        <div ref={selectRef}>
+                        <div ref={selectRef} className="flex items-center gap-1 flex-wrap">
                           <select
-                            autoFocus
-                            defaultValue={tx.category_id || ''}
-                            onChange={e => handleCategoryChange(tx.id, e.target.value)}
+                            autoFocus={!awaitingTransferAccount}
+                            value={pendingCategoryId ?? tx.category_id ?? ''}
+                            onChange={e => handleCategorySelect(tx.id, e.target.value)}
                             className="px-2 py-1 border border-blue-400 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-40"
                           >
                             <CategoryOptions categories={categories} includeEmpty />
                           </select>
+                          {awaitingTransferAccount && (
+                            <>
+                              <ArrowRight size={12} className="text-gray-400 flex-shrink-0" />
+                              <select
+                                autoFocus
+                                value={pendingTransferAccountId}
+                                onChange={e => setPendingTransferAccountId(e.target.value)}
+                                className="px-2 py-1 border border-blue-400 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-32"
+                              >
+                                <option value="">— which account?</option>
+                                {accounts.filter(a => a.id !== tx.account_id).map(a => (
+                                  <option key={a.id} value={a.id}>{a.account_name || a.account_number}</option>
+                                ))}
+                              </select>
+                              <button
+                                onClick={() => saveCategoryChange(tx.id, pendingCategoryId, pendingTransferAccountId || null)}
+                                className="p-1 text-green-600 hover:bg-green-50 rounded"
+                                title="Save"
+                              >
+                                <Check size={13} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       ) : (
                         <button
-                          onClick={() => setEditingCategoryTxId(tx.id)}
+                          onClick={() => {
+                            setEditingCategoryTxId(tx.id);
+                            setPendingCategoryId(tx.category_id || null);
+                            setPendingTransferAccountId(tx.transfer_account_id ? String(tx.transfer_account_id) : '');
+                            setAwaitingTransferAccount(false);
+                          }}
                           className="flex items-center gap-1.5 group"
                           title="Click to change category"
                         >
                           {tx.is_categorised ? (
                             <>
-                              <span
-                                className="w-2 h-2 rounded-full flex-shrink-0"
-                                style={{ backgroundColor: getCategoryColour(tx.category_id) }}
-                              />
-                              <span className="text-xs text-gray-700 group-hover:text-blue-600 transition-colors">
-                                {tx.category_name}
-                              </span>
+                              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: getCategoryColour(tx.category_id) }} />
+                              <span className="text-xs text-gray-700 group-hover:text-blue-600 transition-colors">{tx.category_name}</span>
+                              {tx.transfer_account_name && (
+                                <>
+                                  <ArrowRight size={10} className="text-gray-400 flex-shrink-0" />
+                                  <span className="text-xs text-gray-500">{tx.transfer_account_name}</span>
+                                </>
+                              )}
                             </>
                           ) : (
-                            <span className="text-xs text-gray-300 group-hover:text-blue-500 transition-colors italic">
-                              Uncategorised
-                            </span>
+                            <span className="text-xs text-gray-300 group-hover:text-blue-500 transition-colors italic">Uncategorised</span>
                           )}
                         </button>
                       )}

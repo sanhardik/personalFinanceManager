@@ -144,13 +144,21 @@ class Transaction(Base):
         String(100), nullable=True
     )  # Category from bank CSV (e.g. "PAYMENT", "DEP", "OTHER")
     is_categorised: Mapped[bool] = mapped_column(Boolean, default=False)
+    transfer_account_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True
+    )  # For Transfer In/Out: the other account involved
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
 
     # Relationships
-    account: Mapped["Account"] = relationship(back_populates="transactions")
+    account: Mapped["Account"] = relationship(
+        back_populates="transactions", foreign_keys="Transaction.account_id"
+    )
     category: Mapped["Category | None"] = relationship(back_populates="transactions")
+    transfer_account: Mapped["Account | None"] = relationship(
+        "Account", foreign_keys="Transaction.transfer_account_id"
+    )
 
     @staticmethod
     def compute_hash(account_id: int, tx_date: str, tx_desc: str, tx_amount: float) -> str:
