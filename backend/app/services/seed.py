@@ -14,7 +14,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Category
+from app.models import Category, Rule
 
 logger = logging.getLogger(__name__)
 
@@ -87,5 +87,108 @@ async def seed_default_categories(session: AsyncSession) -> int:
         logger.info("Seeded %d default categories", new_count)
     else:
         logger.info("All default categories already exist — nothing to seed")
+
+    return new_count
+
+
+# Default rules: (pattern, category_name)
+# Pattern is matched case-insensitively anywhere in tx_desc.
+DEFAULT_RULES: list[tuple[str, str]] = [
+    # Groceries
+    ("COLES", "Groceries"),
+    ("WOOLWORTHS", "Groceries"),
+    ("COSTCO WHOLESALE", "Groceries"),
+    ("ALDI", "Groceries"),
+    ("IGA ", "Groceries"),
+    ("HARRIS FARM", "Groceries"),
+    # Fuel
+    ("COSTCO GAS", "Fuel"),
+    ("EVIE NETWORKS", "Fuel"),
+    ("BP ", "Fuel"),
+    ("SHELL ", "Fuel"),
+    ("CALTEX", "Fuel"),
+    ("7-ELEVEN", "Fuel"),
+    # Dining Out
+    ("DOMINOS", "Dining Out"),
+    ("DOORDASH", "Dining Out"),
+    ("UBER EATS", "Dining Out"),
+    ("MENULOG", "Dining Out"),
+    ("MAD MEX", "Dining Out"),
+    ("SARAVANAA", "Dining Out"),
+    ("MCDONALD", "Dining Out"),
+    ("KFC ", "Dining Out"),
+    # Entertainment
+    ("LUNA PARK", "Entertainment"),
+    ("EVENT CINEMAS", "Entertainment"),
+    # Home Maintenance
+    ("BUNNINGS", "Home Maintenance"),
+    ("IKEA", "Home Maintenance"),
+    # Clothing
+    ("KMART", "Clothing"),
+    ("BIG W", "Clothing"),
+    ("TARGET", "Clothing"),
+    ("H&M", "Clothing"),
+    # Subscriptions
+    ("NETFLIX", "Subscriptions"),
+    ("SPOTIFY", "Subscriptions"),
+    ("AMAZON PRIME", "Subscriptions"),
+    ("DISNEY PLUS", "Subscriptions"),
+    ("APPLE.COM/BILL", "Subscriptions"),
+    # Phone & Internet
+    ("DODO SERVICES", "Phone & Internet"),
+    ("OPTUS", "Phone & Internet"),
+    ("TELSTRA", "Phone & Internet"),
+    ("VODAFONE", "Phone & Internet"),
+    # Insurance
+    ("NEOS LIFE", "Insurance"),
+    ("BUPA", "Insurance"),
+    ("MEDIBANK", "Insurance"),
+    ("AAMI", "Insurance"),
+    ("RACV", "Insurance"),
+    # Fees & Charges
+    ("FOREIGN FEE", "Fees & Charges"),
+    ("NORTH SYDNEY COUNCIL", "Fees & Charges"),
+    ("WAVERLEY COUNCIL", "Fees & Charges"),
+    # Transfer Out
+    ("AUTOMATIC PAYMENT", "Transfer Out"),
+    ("SPACESHIP", "Transfer Out"),
+    ("OSKO PAYMENT", "Transfer Out"),
+    # Salary
+    ("SALARY", "Salary"),
+    ("PAYROLL", "Salary"),
+]
+
+
+async def seed_default_rules(session: AsyncSession) -> int:
+    """
+    Insert default rules if they don't already exist (matched by pattern).
+    Skips rules whose target category doesn't exist.
+
+    Returns the number of new rules inserted.
+    """
+    # Load all categories by name
+    cat_result = await session.execute(select(Category.id, Category.name))
+    cat_map = {name: cid for cid, name in cat_result.all()}
+
+    # Load existing rule patterns
+    rule_result = await session.execute(select(Rule.pattern))
+    existing_patterns = {row[0].lower() for row in rule_result.all()}
+
+    new_count = 0
+    for pattern, category_name in DEFAULT_RULES:
+        if pattern.lower() in existing_patterns:
+            continue
+        category_id = cat_map.get(category_name)
+        if not category_id:
+            logger.warning("Skipping rule '%s' — category '%s' not found", pattern, category_name)
+            continue
+        session.add(Rule(pattern=pattern, category_id=category_id, is_active=True))
+        new_count += 1
+
+    if new_count > 0:
+        await session.commit()
+        logger.info("Seeded %d default rules", new_count)
+    else:
+        logger.info("All default rules already exist — nothing to seed")
 
     return new_count

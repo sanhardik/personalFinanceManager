@@ -9,3 +9,7 @@ export async function fetchTransactions({ accountId, txType, search, categorised
   const response = await api.get('/transactions', { params });
   return response.data;
 }
+
+export const patchTransaction = (id, data) => api.patch(`/transactions/${id}`, data).then(r => r.data);
+export const bulkCategorise = (transaction_ids, category_id) =>
+  api.post('/transactions/bulk-categorise', { transaction_ids, category_id }).then(r => r.data);
