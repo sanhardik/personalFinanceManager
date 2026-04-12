@@ -3,6 +3,8 @@ import { Wand2, Plus, Trash2, Edit2, X, Check, Loader2, Play, Search, AlertTrian
 import { fetchRules, createRule, updateRule, deleteRule, applyRules, fetchAffected, recategoriseByRule, fetchSuggestions, acceptSuggestion, dismissSuggestion } from '../api/rules';
 import { fetchCategories } from '../api/categories';
 import { CategoryOptions } from '../utils/categoryGroups.jsx';
+import { SortableHeader } from '../components/SortableHeader';
+import { useSortable } from '../hooks/useSortable';
 
 const formatAmount = (v) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(v);
 const formatDate = (d) => new Date(d).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -37,6 +39,8 @@ export default function Rules() {
   // confirmation: { ruleId, newCategoryId, affected: { count, old_category_name, transactions[] } }
   const [confirming, setConfirming] = useState(false);
   const [recategorising, setRecategorising] = useState(false);
+
+  const { sort, onSort, sortData } = useSortable('pattern', 'asc');
 
   const load = useCallback(async () => {
     try {
@@ -186,6 +190,11 @@ export default function Rules() {
         r.category.name.toLowerCase().includes(search.toLowerCase())
       )
     : rules;
+
+  const sortedFiltered = sortData(filtered, {
+    pattern: r => r.pattern,
+    category: r => r.category.name,
+  });
 
   const activeCount = rules.filter(r => r.is_active).length;
   const inactiveCount = rules.filter(r => !r.is_active).length;
@@ -420,14 +429,14 @@ export default function Rules() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Pattern</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Category</th>
+                <SortableHeader label="Pattern" column="pattern" sort={sort} onSort={onSort} />
+                <SortableHeader label="Category" column="category" sort={sort} onSort={onSort} />
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Status</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-500">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((rule) => (
+              {sortedFiltered.map((rule) => (
                 <tr key={rule.id}
                   className={`border-b border-gray-50 hover:bg-gray-50 transition-colors ${!rule.is_active ? 'opacity-40' : ''} ${editingId === rule.id ? 'bg-blue-50/30' : ''}`}>
                   <td className="px-4 py-3">
