@@ -18,6 +18,7 @@ import {
   Upload,
   Settings,
   Landmark,
+  TrendingUp,
 } from 'lucide-react';
 
 /**
@@ -29,6 +30,7 @@ const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/accounts', label: 'Accounts', icon: Landmark },
   { to: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
+  { to: '/investments', label: 'Investments', icon: TrendingUp },
   { to: '/categories', label: 'Categories', icon: Tags },
   { to: '/rules', label: 'Rules', icon: BookOpen },
   { to: '/upload', label: 'Upload CSV', icon: Upload },

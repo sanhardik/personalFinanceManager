@@ -21,7 +21,7 @@ export function SortableHeader({ label, column, sort, onSort, className = '', al
     >
       <span className={`inline-flex items-center gap-1 ${align === 'right' ? 'flex-row-reverse' : ''}`}>
         {label}
-        <Icon size={13} className={active ? 'text-blue-500' : 'text-gray-300 group-hover:text-gray-400'} />
+        <Icon size={13} className={active ? 'text-blue-500' : 'text-gray-400 group-hover:text-gray-600'} />
       </span>
     </th>
   );

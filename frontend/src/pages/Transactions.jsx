@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { ArrowLeftRight, Search, ChevronLeft, ChevronRight, Loader2, CheckCircle2, X, Sparkles, ArrowRight, Check } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { ArrowLeftRight, Search, ChevronLeft, ChevronRight, Loader2, CheckCircle2, X, Sparkles, ArrowRight, Check, Link2 } from 'lucide-react';
 import { fetchTransactions, patchTransaction, bulkCategorise } from '../api/transactions';
 import { fetchAccounts } from '../api/accounts';
 import { fetchCategories } from '../api/categories';
@@ -20,9 +20,13 @@ export default function Transactions() {
   const [txType, setTxType] = useState('');
   const [search, setSearch] = useState('');
   const [searchDebounce, setSearchDebounce] = useState('');
+  // categoryFilter: '' = all, 'uncategorised' = uncategorised only, number = specific category id
+  const [categoryFilter, setCategoryFilter] = useState('');
 
   // Sort state
-  const { sort, onSort } = useSortable('tx_date', 'desc');
+  const { sort, onSort: _onSort } = useSortable('tx_date', 'desc');
+  const [userSorted, setUserSorted] = useState(false);
+  const onSort = useCallback((col) => { _onSort(col); setUserSorted(true); }, [_onSort]);
 
   // Inline category edit
   const [editingCategoryTxId, setEditingCategoryTxId] = useState(null);
@@ -30,6 +34,9 @@ export default function Transactions() {
   const [pendingCategoryId, setPendingCategoryId] = useState(null);
   const [pendingTransferAccountId, setPendingTransferAccountId] = useState('');
   const selectRef = useRef(null);
+
+  // Transfer auto-match banner
+  const [transferMatchBanner, setTransferMatchBanner] = useState(null);
 
   // Similar transaction suggestion (bulk apply)
   const [suggestion, setSuggestion] = useState(null);
@@ -52,8 +59,11 @@ export default function Transactions() {
         accountId: accountId || undefined,
         txType: txType || undefined,
         search: searchDebounce || undefined,
+        categorised: categoryFilter === 'uncategorised' ? false : undefined,
+        categoryId: categoryFilter && categoryFilter !== 'uncategorised' ? parseInt(categoryFilter) : undefined,
         sortBy: sort.column,
         sortDir: sort.dir,
+        uncategorisedFirst: !userSorted,
         page,
       });
       setTransactions(data.items);
@@ -63,7 +73,7 @@ export default function Transactions() {
     } finally {
       setLoading(false);
     }
-  }, [accountId, txType, searchDebounce, sort]);
+  }, [accountId, txType, searchDebounce, categoryFilter, sort, userSorted]);
 
   useEffect(() => { loadTransactions(1); }, [loadTransactions]);
 
@@ -97,10 +107,17 @@ export default function Transactions() {
   const saveCategoryChange = async (txId, categoryId, transferAccountId) => {
     setSuggestion(null);
     setRuleSuggestion(null);
+    setTransferMatchBanner(null);
     try {
       const body = { category_id: categoryId, transfer_account_id: transferAccountId ? parseInt(transferAccountId) : null };
       const updated = await patchTransaction(txId, body);
       setTransactions(prev => prev.map(tx => tx.id === txId ? { ...tx, ...updated } : tx));
+
+      // Transfer auto-match banner
+      if (updated.transfer_matched_account) {
+        setTransferMatchBanner(updated.transfer_matched_account);
+        setTimeout(() => setTransferMatchBanner(null), 5000);
+      }
 
       // Option A: rule suggestion prompt
       if (updated.rule_suggestion && !updated.rule_suggestion.auto_promoted) {
@@ -178,6 +195,30 @@ export default function Transactions() {
     }
   };
 
+  // Find matched transfer pairs within the current page.
+  // A pair: tx A (Transfer Out, account=X, transfer_account_id=Y) ↔
+  //         tx B (Transfer In,  account=Y, transfer_account_id=X, same amount, date ±1d)
+  const transferPairs = useMemo(() => {
+    const map = new Map(); // tx.id → paired tx.id
+    const linked = transactions.filter(tx => tx.transfer_account_id);
+    for (const tx of linked) {
+      if (map.has(tx.id)) continue;
+      const partner = linked.find(other =>
+        other.id !== tx.id &&
+        !map.has(other.id) &&
+        other.account_id === tx.transfer_account_id &&
+        other.transfer_account_id === tx.account_id &&
+        Math.abs(other.tx_amount - tx.tx_amount) < 0.01 &&
+        Math.abs(new Date(other.tx_date) - new Date(tx.tx_date)) <= 86400000 // 1 day ms
+      );
+      if (partner) {
+        map.set(tx.id, partner.id);
+        map.set(partner.id, tx.id);
+      }
+    }
+    return map;
+  }, [transactions]);
+
   const getCategoryColour = (id) => categories.find(c => c.id === id)?.colour || '#94a3b8';
   const getAccountName = (id) => {
     const acc = accounts.find(a => a.id === id);
@@ -219,7 +260,28 @@ export default function Transactions() {
           <option value="Income">Income</option>
           <option value="Expense">Expense</option>
         </select>
+        <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm min-w-44">
+          <option value="">All Categories</option>
+          <option value="uncategorised">Uncategorised</option>
+          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
       </div>
+
+      {/* Transfer auto-match banner */}
+      {transferMatchBanner && (
+        <div className="mb-3 p-3 bg-teal-50 border border-teal-200 rounded-lg flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <ArrowRight size={16} className="text-teal-600 flex-shrink-0" />
+            <span className="text-sm text-teal-800">
+              Matched: counterpart transaction on <strong>{transferMatchBanner}</strong> auto-linked.
+            </span>
+          </div>
+          <button onClick={() => setTransferMatchBanner(null)} className="p-1.5 text-teal-400 hover:text-teal-600">
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {/* Option A: Rule suggestion prompt */}
       {ruleSuggestion && ruleSuggestion.auto_promoted && (
@@ -310,17 +372,23 @@ export default function Transactions() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  <SortableHeader label="Date" column="tx_date" sort={sort} onSort={(col) => { onSort(col); loadTransactions(1); }} />
-                  <SortableHeader label="Description" column="tx_desc" sort={sort} onSort={(col) => { onSort(col); loadTransactions(1); }} />
+                  <SortableHeader label="Date" column="tx_date" sort={sort} onSort={onSort} />
+                  <SortableHeader label="Description" column="tx_desc" sort={sort} onSort={onSort} />
                   <th className="text-left px-4 py-3 font-medium text-gray-500">Account</th>
-                  <SortableHeader label="Amount" column="tx_amount" sort={sort} onSort={(col) => { onSort(col); loadTransactions(1); }} align="right" />
+                  <SortableHeader label="Amount" column="tx_amount" sort={sort} onSort={onSort} align="right" />
                   <th className="text-right px-4 py-3 font-medium text-gray-500">Balance</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-500">Category</th>
+                  <SortableHeader label="Category" column="category" sort={sort} onSort={onSort} />
                 </tr>
               </thead>
               <tbody>
-                {transactions.map((tx) => (
-                  <tr key={tx.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                {transactions.map((tx) => {
+                  const isPaired = transferPairs.has(tx.id);
+                  return (
+                  <tr key={tx.id} className={`border-b transition-colors ${
+                    isPaired
+                      ? 'border-teal-100 bg-teal-50/40 hover:bg-teal-50'
+                      : 'border-gray-50 hover:bg-gray-50'
+                  }`}>
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(tx.tx_date)}</td>
                     <td className="px-4 py-3 text-gray-800 max-w-xs truncate" title={tx.tx_desc}>{tx.tx_desc}</td>
                     <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{getAccountName(tx.account_id)}</td>
@@ -388,6 +456,9 @@ export default function Transactions() {
                                   <span className="text-xs text-gray-500">{tx.transfer_account_name}</span>
                                 </>
                               )}
+                              {isPaired && (
+                                <Link2 size={11} className="text-teal-500 flex-shrink-0 ml-0.5" title="Matched transfer pair" />
+                              )}
                             </>
                           ) : (
                             <span className="text-xs text-gray-300 group-hover:text-blue-500 transition-colors italic">Uncategorised</span>
@@ -396,7 +467,8 @@ export default function Transactions() {
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -7,9 +7,10 @@ Routes:
 """
 
 import json
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, asc, desc
+from sqlalchemy import select, func, asc, desc, or_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,8 +36,10 @@ async def list_transactions(
     tx_type: str | None = Query(default=None, pattern="^(Income|Expense)$"),
     search: str | None = Query(default=None, description="Search in description"),
     categorised: bool | None = Query(default=None, description="Filter by categorised status"),
-    sort_by: str = Query(default="tx_date", pattern="^(tx_date|tx_amount|tx_desc|tx_type)$"),
+    category_id: int | None = Query(default=None, description="Filter by specific category"),
+    sort_by: str = Query(default="tx_date", pattern="^(tx_date|tx_amount|tx_desc|tx_type|category)$"),
     sort_dir: str = Query(default="desc", pattern="^(asc|desc)$"),
+    uncategorised_first: bool = Query(default=True, description="Pin uncategorised rows to top"),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -55,27 +58,47 @@ async def list_transactions(
         stmt = stmt.where(Transaction.tx_type == tx_type)
         count_stmt = count_stmt.where(Transaction.tx_type == tx_type)
     if search:
-        pattern = f"%{search}%"
-        stmt = stmt.where(Transaction.tx_desc.ilike(pattern))
-        count_stmt = count_stmt.where(Transaction.tx_desc.ilike(pattern))
+        desc_match = Transaction.tx_desc.ilike(f"%{search}%")
+        conditions = [desc_match]
+        try:
+            amount = abs(float(search.replace(",", "").replace("$", "")))
+            if amount > 0:
+                conditions.append(Transaction.tx_amount == amount)
+        except ValueError:
+            pass
+        search_filter = or_(*conditions)
+        stmt = stmt.where(search_filter)
+        count_stmt = count_stmt.where(search_filter)
     if categorised is not None:
         stmt = stmt.where(Transaction.is_categorised == categorised)
         count_stmt = count_stmt.where(Transaction.is_categorised == categorised)
+    if category_id is not None:
+        stmt = stmt.where(Transaction.category_id == category_id)
+        count_stmt = count_stmt.where(Transaction.category_id == category_id)
 
     total_result = await db.execute(count_stmt)
     total = total_result.scalar() or 0
 
-    col_map = {
-        "tx_date": Transaction.tx_date,
-        "tx_amount": Transaction.tx_amount,
-        "tx_desc": Transaction.tx_desc,
-        "tx_type": Transaction.tx_type,
-    }
-    sort_col = col_map[sort_by]
-    order_expr = asc(sort_col) if sort_dir == "asc" else desc(sort_col)
+    # Build secondary sort expression (user-chosen column)
+    if sort_by == "category":
+        # Join categories for name-based sort; selectinload still handles data loading
+        stmt = stmt.outerjoin(Category, Transaction.category_id == Category.id)
+        secondary_order = asc(Category.name) if sort_dir == "asc" else desc(Category.name)
+    else:
+        col_map = {
+            "tx_date": Transaction.tx_date,
+            "tx_amount": Transaction.tx_amount,
+            "tx_desc": Transaction.tx_desc,
+            "tx_type": Transaction.tx_type,
+        }
+        secondary_order = asc(col_map[sort_by]) if sort_dir == "asc" else desc(col_map[sort_by])
 
     offset = (page - 1) * per_page
-    stmt = stmt.order_by(order_expr, desc(Transaction.id))
+    order_clauses = []
+    if uncategorised_first:
+        order_clauses.append(asc(Transaction.is_categorised))
+    order_clauses.extend([secondary_order, desc(Transaction.id)])
+    stmt = stmt.order_by(*order_clauses)
     stmt = stmt.offset(offset).limit(per_page)
 
     result = await db.execute(stmt)
@@ -140,6 +163,46 @@ async def patch_transaction(
     )
     tx = result.scalar_one()
     response = _tx_to_response(tx)
+
+    # ── Transfer auto-matching ────────────────────────────────────────────────
+    # When a transfer category + linked account is saved, automatically find and
+    # link the counterpart transaction on the other account.
+    transfer_matched_account = None
+    if tx.transfer_account_id and tx.is_categorised and tx.category:
+        cat_name = tx.category.name.lower()
+        if "transfer" in cat_name:
+            opp_name = "Transfer In" if "out" in cat_name else "Transfer Out"
+            opp_cat_result = await db.execute(
+                select(Category).where(Category.name == opp_name)
+            )
+            opp_cat = opp_cat_result.scalar_one_or_none()
+            if opp_cat:
+                date_from = tx.tx_date - timedelta(days=2)
+                date_to = tx.tx_date + timedelta(days=2)
+                counterpart_result = await db.execute(
+                    select(Transaction).where(
+                        Transaction.account_id == tx.transfer_account_id,
+                        Transaction.tx_amount == tx.tx_amount,
+                        Transaction.tx_date.between(date_from, date_to),
+                        Transaction.id != tx_id,
+                        # Skip if already linked to a different account
+                        (Transaction.transfer_account_id.is_(None))
+                        | (Transaction.transfer_account_id == tx.account_id),
+                    ).order_by(
+                        func.abs(func.datediff(Transaction.tx_date, tx.tx_date))
+                    ).limit(1)
+                )
+                counterpart = counterpart_result.scalar_one_or_none()
+                if counterpart:
+                    counterpart.category_id = opp_cat.id
+                    counterpart.is_categorised = True
+                    counterpart.transfer_account_id = tx.account_id
+                    await db.commit()
+                    transfer_matched_account = (
+                        tx.transfer_account.account_name if tx.transfer_account else None
+                    )
+
+    response["transfer_matched_account"] = transfer_matched_account
 
     # Find similar uncategorised transactions (same first 3 words of description)
     if body.category_id is not None:

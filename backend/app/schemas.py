@@ -71,6 +71,8 @@ class AccountUpdate(BaseModel):
     )
     linked_account_id: int | None = None
     is_active: bool | None = None
+    current_value: float | None = None
+    current_value_at: datetime | None = None
 
 
 class AccountResponse(BaseModel):
@@ -82,9 +84,24 @@ class AccountResponse(BaseModel):
     account_type: str
     is_active: bool
     linked_account_id: int | None
+    current_value: float | None = None
+    current_value_at: datetime | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class InvestmentResponse(BaseModel):
+    """GET /investments — investment account with contribution + return summary."""
+    id: int
+    account_name: str
+    bank_name: str
+    account_number: str
+    total_contributed: float
+    current_value: float | None
+    current_value_at: datetime | None
+    return_amount: float | None    # current_value - total_contributed
+    return_pct: float | None       # return_amount / total_contributed * 100
 
 
 # ── Transactions ─────────────────────────────────────────────
@@ -124,6 +141,7 @@ class TransactionPatchResponse(TransactionResponse):
     similar_uncategorised: int = 0
     similar_prefix: str | None = None
     rule_suggestion: SuggestedRuleHint | None = None
+    transfer_matched_account: str | None = None  # name of counterpart account if auto-matched
 
 
 class TransactionUpdate(BaseModel):
