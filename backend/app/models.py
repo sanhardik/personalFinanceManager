@@ -48,6 +48,7 @@ class Account(Base):
     account_number: Mapped[str] = mapped_column(String(256), unique=True, nullable=False)
     account_name: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     bank_name: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    bsb: Mapped[str | None] = mapped_column(String(10), nullable=True)
     account_type: Mapped[str] = mapped_column(
         String(50), nullable=False, default="bank"
     )  # "bank", "credit_card", "home_loan"

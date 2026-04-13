@@ -59,6 +59,7 @@ class AccountCreate(BaseModel):
     account_type: str = Field(
         default="bank", pattern="^(bank|credit_card|home_loan|investment)$"
     )
+    bsb: str | None = Field(default=None, max_length=12)
     linked_account_id: int | None = None
 
 
@@ -69,6 +70,8 @@ class AccountUpdate(BaseModel):
     account_type: str | None = Field(
         default=None, pattern="^(bank|credit_card|home_loan|investment)$"
     )
+    account_number: str | None = Field(default=None, min_length=1, max_length=256)
+    bsb: str | None = Field(default=None, max_length=12)
     linked_account_id: int | None = None
     is_active: bool | None = None
     current_value: float | None = None
@@ -82,6 +85,7 @@ class AccountResponse(BaseModel):
     account_name: str
     bank_name: str
     account_type: str
+    bsb: str | None = None
     is_active: bool
     linked_account_id: int | None
     current_value: float | None = None
