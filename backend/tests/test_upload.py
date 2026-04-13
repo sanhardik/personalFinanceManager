@@ -19,11 +19,20 @@ def _load_fixture(name):
 
 @pytest.mark.anyio
 async def test_list_supported_banks(client):
-    """GET /upload/banks should list supported banks."""
+    """GET /upload/banks returns bank info objects with name, description, required_headers."""
     response = await client.get("/upload/banks")
     assert response.status_code == 200
     banks = response.json()
-    assert "Westpac" in banks
+    names = [b["name"] for b in banks]
+    assert "Westpac" in names
+    assert "NAB" in names
+    assert "Macquarie" in names
+    # Each entry has the expected shape
+    for b in banks:
+        assert "name" in b
+        assert "description" in b
+        assert "required_headers" in b
+        assert isinstance(b["required_headers"], list)
 
 
 # ── POST /upload ─────────────────────────────────────────────

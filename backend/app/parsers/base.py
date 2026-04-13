@@ -46,6 +46,8 @@ class BankParser(ABC):
 
     Subclasses must implement:
     - bank_name: human-readable bank name
+    - description: one-line description shown in the upload UI
+    - required_headers: set of column names that identify this bank's CSV
     - can_parse(): check if this parser handles the given CSV headers
     - parse(): extract transactions from the CSV file
     """
@@ -54,6 +56,18 @@ class BankParser(ABC):
     @abstractmethod
     def bank_name(self) -> str:
         """Human-readable bank name (e.g. 'Westpac')."""
+        ...
+
+    @property
+    @abstractmethod
+    def description(self) -> str:
+        """Short description of the CSV format, shown in the upload UI."""
+        ...
+
+    @property
+    @abstractmethod
+    def required_headers(self) -> list[str]:
+        """Column names required in the CSV header to identify this bank."""
         ...
 
     @abstractmethod

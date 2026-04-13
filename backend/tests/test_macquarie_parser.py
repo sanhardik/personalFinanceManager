@@ -303,10 +303,43 @@ async def test_upload_macquarie_dedup(client):
 
 @pytest.mark.anyio
 async def test_get_supported_banks_includes_macquarie(client):
-    """GET /upload/banks lists Macquarie as a supported bank."""
+    """GET /upload/banks lists Macquarie as a supported bank with format metadata."""
     response = await client.get("/upload/banks")
     assert response.status_code == 200
     banks = response.json()
-    assert "Macquarie" in banks
-    assert "Westpac" in banks
-    assert "NAB" in banks
+    names = [b["name"] for b in banks]
+    assert "Macquarie" in names
+    assert "Westpac" in names
+    assert "NAB" in names
+    # Macquarie entry has required_headers
+    mac = next(b for b in banks if b["name"] == "Macquarie")
+    assert "Transaction Date" in mac["required_headers"]
+    assert "Debit" in mac["required_headers"]
+
+
+@pytest.mark.anyio
+async def test_upload_with_correct_bank_param(client):
+    """POST /upload with matching bank param succeeds."""
+    csv_content = _load_fixture("macquarie_sample.csv")
+    response = await client.post(
+        "/upload",
+        files={"file": ("mac.csv", csv_content.encode(), "text/csv")},
+        data={"bank": "Macquarie"},
+    )
+    assert response.status_code == 200
+    assert response.json()["bank_name"] == "Macquarie"
+
+
+@pytest.mark.anyio
+async def test_upload_with_wrong_bank_param(client):
+    """POST /upload with mismatched bank param returns 422 with a clear message."""
+    csv_content = _load_fixture("macquarie_sample.csv")
+    response = await client.post(
+        "/upload",
+        files={"file": ("mac.csv", csv_content.encode(), "text/csv")},
+        data={"bank": "Westpac"},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "Macquarie" in detail  # detected bank mentioned
+    assert "Westpac" in detail   # selected bank mentioned

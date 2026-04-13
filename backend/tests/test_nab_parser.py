@@ -248,6 +248,7 @@ async def test_get_supported_banks_includes_nab(client):
     """GET /upload/banks lists NAB as a supported bank."""
     response = await client.get("/upload/banks")
     assert response.status_code == 200
-    banks = response.json()  # returns a plain list of bank name strings
-    assert "NAB" in banks
-    assert "Westpac" in banks
+    banks = response.json()
+    names = [b["name"] for b in banks]
+    assert "NAB" in names
+    assert "Westpac" in names

@@ -71,12 +71,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Migration check failed (non-fatal): %s", e)
 
-    # Schema migrations — add investment value columns to accounts
+    # Schema migrations — add investment value columns + BSB to accounts
     try:
         async with engine.begin() as conn:
             for col_name, col_def in [
                 ("current_value", "DECIMAL(12,2) NULL"),
                 ("current_value_at", "DATETIME NULL"),
+                ("bsb", "VARCHAR(10) NULL"),
             ]:
                 exists = await conn.execute(text(
                     "SELECT COUNT(*) FROM information_schema.COLUMNS "

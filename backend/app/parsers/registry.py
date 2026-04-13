@@ -33,3 +33,15 @@ def detect_parser(header_line: str) -> BankParser | None:
 def get_supported_banks() -> list[str]:
     """Return list of supported bank names."""
     return [p.bank_name for p in PARSERS]
+
+
+def get_bank_info() -> list[dict]:
+    """Return name, description, and required headers for each supported bank."""
+    return [
+        {
+            "name": p.bank_name,
+            "description": p.description,
+            "required_headers": p.required_headers,
+        }
+        for p in PARSERS
+    ]

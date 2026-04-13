@@ -20,7 +20,7 @@ export default function Accounts() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     account_number: '', account_name: '', bank_name: 'Westpac',
-    account_type: 'home_loan', linked_account_id: '',
+    account_type: 'home_loan', bsb: '', linked_account_id: '',
   });
   const [formSubmitting, setFormSubmitting] = useState(false);
 
@@ -48,9 +48,10 @@ export default function Accounts() {
       setFormSubmitting(true);
       await createAccount({
         ...form,
+        bsb: form.bsb || null,
         linked_account_id: form.linked_account_id ? parseInt(form.linked_account_id) : null,
       });
-      setForm({ account_number: '', account_name: '', bank_name: 'Westpac', account_type: 'home_loan', linked_account_id: '' });
+      setForm({ account_number: '', account_name: '', bank_name: 'Westpac', account_type: 'home_loan', bsb: '', linked_account_id: '' });
       setShowForm(false);
       await loadAccounts();
     } catch (err) {
@@ -63,8 +64,10 @@ export default function Accounts() {
   const startEdit = (acc) => {
     setEditingId(acc.id);
     setEditData({
+      account_number: acc.account_number,
       account_name: acc.account_name,
       account_type: acc.account_type,
+      bsb: acc.bsb || '',
       linked_account_id: acc.linked_account_id || '',
     });
   };
@@ -73,6 +76,7 @@ export default function Accounts() {
     try {
       await updateAccount(id, {
         ...editData,
+        bsb: editData.bsb || null,
         linked_account_id: editData.linked_account_id ? parseInt(editData.linked_account_id) : null,
       });
       setEditingId(null);
@@ -128,9 +132,12 @@ export default function Accounts() {
         <form onSubmit={handleCreate} className="mb-6 bg-white rounded-xl border border-gray-200 p-4">
           <p className="text-sm font-medium text-gray-700 mb-3">Add Account (e.g. Home Loan)</p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <input type="text" placeholder="BSB (e.g. 032-456)" value={form.bsb}
+              onChange={e => setForm({...form, bsb: e.target.value})}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
             <input type="text" placeholder="Account number" value={form.account_number}
               onChange={e => setForm({...form, account_number: e.target.value})}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required />
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" required />
             <input type="text" placeholder="Account name" value={form.account_name}
               onChange={e => setForm({...form, account_name: e.target.value})}
               className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -203,7 +210,18 @@ export default function Accounts() {
                     <div className="space-y-2">
                       <input type="text" value={editData.account_name}
                         onChange={e => setEditData({...editData, account_name: e.target.value})}
+                        placeholder="Account name"
                         className="w-full px-2 py-1 border border-gray-300 rounded text-sm" />
+                      <div className="flex gap-1">
+                        <input type="text" value={editData.bsb}
+                          onChange={e => setEditData({...editData, bsb: e.target.value})}
+                          placeholder="BSB"
+                          className="w-24 px-2 py-1 border border-gray-300 rounded text-sm font-mono" />
+                        <input type="text" value={editData.account_number}
+                          onChange={e => setEditData({...editData, account_number: e.target.value})}
+                          placeholder="Account number"
+                          className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm font-mono" />
+                      </div>
                       <select value={editData.account_type}
                         onChange={e => setEditData({...editData, account_type: e.target.value})}
                         className="w-full px-2 py-1 border border-gray-300 rounded text-sm">
@@ -234,7 +252,10 @@ export default function Accounts() {
                           </div>
                           <div>
                             <p className="text-sm font-medium text-gray-800">{acc.account_name}</p>
-                            <p className="text-xs text-gray-400 font-mono">{acc.account_number}</p>
+                            <p className="text-xs text-gray-400 font-mono">
+                              {acc.bsb && <span>{acc.bsb} · </span>}
+                              {acc.account_number}
+                            </p>
                           </div>
                         </div>
                         <button onClick={() => startEdit(acc)} className="p-1 text-gray-300 hover:text-blue-600 hover:bg-gray-50 rounded">

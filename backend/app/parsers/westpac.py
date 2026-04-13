@@ -41,6 +41,14 @@ class WestpacParser(BankParser):
     def bank_name(self) -> str:
         return "Westpac"
 
+    @property
+    def description(self) -> str:
+        return "Westpac personal/business bank and credit card accounts"
+
+    @property
+    def required_headers(self) -> list[str]:
+        return ["Bank Account", "Date", "Narrative", "Debit Amount", "Credit Amount"]
+
     def can_parse(self, header_line: str) -> bool:
         """Check if the header matches Westpac CSV format."""
         # Parse header, strip whitespace and quotes

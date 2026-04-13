@@ -54,6 +54,14 @@ class MacquarieParser(BankParser):
     def bank_name(self) -> str:
         return "Macquarie"
 
+    @property
+    def description(self) -> str:
+        return "Macquarie Bank savings and transaction accounts"
+
+    @property
+    def required_headers(self) -> list[str]:
+        return ["Transaction Date", "Details", "Debit", "Credit", "Balance", "Original Description"]
+
     def can_parse(self, header_line: str) -> bool:
         """Return True if the header matches Macquarie CSV format."""
         headers = {h.strip().strip('"') for h in header_line.split(",")}

@@ -41,6 +41,14 @@ class NABParser(BankParser):
     def bank_name(self) -> str:
         return "NAB"
 
+    @property
+    def description(self) -> str:
+        return "NAB (National Australia Bank) transaction export"
+
+    @property
+    def required_headers(self) -> list[str]:
+        return ["Date", "Amount", "Account Number", "Transaction Type", "Transaction Details"]
+
     def can_parse(self, header_line: str) -> bool:
         """Return True if the header matches NAB CSV format."""
         headers = {h.strip().strip('"') for h in header_line.split(",")}

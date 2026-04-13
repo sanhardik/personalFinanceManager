@@ -55,6 +55,7 @@ async def create_account(
         account_name=payload.account_name,
         bank_name=payload.bank_name,
         account_type=payload.account_type,
+        bsb=payload.bsb,
         linked_account_id=payload.linked_account_id,
     )
     db.add(account)
@@ -102,6 +103,7 @@ async def accounts_summary(
             "account_name": acc.account_name,
             "bank_name": acc.bank_name,
             "account_type": acc.account_type,
+            "bsb": acc.bsb,
             "is_active": acc.is_active,
             "linked_account_id": acc.linked_account_id,
             "transaction_count": tx_count,
@@ -142,6 +144,14 @@ async def update_account(
         raise HTTPException(status_code=404, detail="Account not found")
 
     update_data = payload.model_dump(exclude_unset=True)
+
+    # Validate new account_number is not already taken
+    if "account_number" in update_data and update_data["account_number"] != account.account_number:
+        clash = await db.execute(
+            select(Account).where(Account.account_number == update_data["account_number"])
+        )
+        if clash.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail=f"Account number '{update_data['account_number']}' is already in use")
 
     # Validate linked account if being set
     if "linked_account_id" in update_data and update_data["linked_account_id"]:
