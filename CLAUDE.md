@@ -66,7 +66,7 @@ Hardik Sanghavi (hardik.sanghavi@permaconn.com). Building a personal finance man
 | 5 | Rules + manual categorisation + PATCH /transactions | Done |
 | 6 | Dashboard + Reports (charts, net worth, recent txns) | Done |
 | 7 | NAB parser + auto-detection | Done |
-| 8 | Macquarie parser | Blocked (need sample CSV) |
+| 8 | Macquarie parser | Done |
 
 ## Chunk 1 — What Was Built (DONE)
 ### Backend (Python FastAPI)
@@ -248,6 +248,34 @@ Hardik Sanghavi (hardik.sanghavi@permaconn.com). Building a personal finance man
 
 ### Tests (107 passed, 5 skipped — all green)
 - `tests/test_dashboard.py` — 12 tests: summary totals, transfer exclusion, date filtering, monthly grouping, by-category income/expense, sort order, invalid type
+
+## Chunk 8 — What Was Built (DONE)
+### Macquarie CSV Format
+| Column | Notes |
+|--------|-------|
+| Transaction Date | `DD Mon YYYY` (e.g. `10 Apr 2026`) — 4-digit year |
+| Details | Verbose description (may include receipt numbers) |
+| Account | Text account name (e.g. "Main account") — NO account number in CSV |
+| Category | Macquarie's own category label |
+| Subcategory | More specific Macquarie sub-category |
+| Tags | User tags (usually empty) |
+| Notes | User notes (usually empty) |
+| Debit | Money out (expense) — positive value, empty for income |
+| Credit | Money in (income) — positive value, empty for expense |
+| Balance | Running balance after transaction |
+| Original Description | Cleaner description — preferred over Details |
+
+### Backend
+- `app/parsers/macquarie.py` — MacquarieParser: detects header by requiring `{Transaction Date, Details, Debit, Credit, Balance, Original Description}`; parses `DD Mon YYYY` dates; Debit → Expense, Credit → Income; uses Original Description if non-empty else falls back to Details; derives account number slug from account name (e.g. "Main account" → "MAC-MAIN-ACCOUNT") since CSV has no account numbers
+- `app/parsers/registry.py` — MacquarieParser registered (after NAB)
+- `tests/fixtures/macquarie_sample.csv` — 108-row fixture from real Macquarie export
+- `tests/test_macquarie_parser.py` — 27 tests: header detection, expense/income, dates, balance, account slug, description fallback, category concat, dedup, upload integration
+
+### Tests (136 passed, 5 skipped — all green)
+
+### Notes
+- Macquarie does not include account numbers in CSV exports — account number is derived as a slug from the account name column; user can rename the auto-created account after first upload
+- Loan accounts: user has 4 Macquarie loan accounts; loan CSV format TBD (may differ from savings)
 
 ## Chunk 4 — What Was Built (DONE)
 Implemented as part of Chunk 3 inside `app/routers/transactions.py`:
