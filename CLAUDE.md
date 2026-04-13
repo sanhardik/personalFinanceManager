@@ -52,9 +52,9 @@ Hardik Sanghavi (hardik.sanghavi@permaconn.com). Building a personal finance man
 ## Banks — CSV Formats
 | Bank | Date Format | Columns | Notes |
 |------|-------------|---------|-------|
-| Westpac | DD/MM/YYYY | Bank Account, Date, Narrative, Debit Amount, Credit Amount | Known from old code |
-| NAB | TBD | TBD | Awaiting sample CSV |
-| Macquarie | TBD | TBD | Awaiting sample CSV |
+| Westpac | DD/MM/YYYY | Bank Account, Date, Narrative, Debit Amount, Credit Amount | Separate debit/credit cols; credit card detection by account prefix |
+| NAB | DD Mon YY | Date, Amount, Account Number, (blank), Transaction Type, Transaction Details, Balance, Category, Merchant Name, Processed On | Single signed Amount col; neg=expense, pos=income; blank 4th col |
+| Macquarie | TBD | TBD | Blocked — no sample CSV yet |
 
 ## Build Plan — Phase 1 Chunks
 | Chunk | What | Status |
@@ -64,7 +64,7 @@ Hardik Sanghavi (hardik.sanghavi@permaconn.com). Building a personal finance man
 | 3 | Westpac CSV parser + upload + Transactions table | Done |
 | 4 | Transaction filters + search + pagination | Done |
 | 5 | Rules + manual categorisation + PATCH /transactions | Done |
-| 6 | Dashboard + Reports (charts, net worth, recent txns) | Next |
+| 6 | Dashboard + Reports (charts, net worth, recent txns) | Done |
 | 7 | NAB parser + auto-detection | Done |
 | 8 | Macquarie parser | Blocked (need sample CSV) |
 
@@ -133,7 +133,7 @@ Hardik Sanghavi (hardik.sanghavi@permaconn.com). Building a personal finance man
 
 ### Frontend
 - `src/api/accounts.js` — `fetchAccounts`, `fetchAccountsSummary`, `createAccount`, `updateAccount`
-- `src/api/transactions.js` — `fetchTransactions({accountId, txType, search, page, perPage})`
+- `src/api/transactions.js` — `fetchTransactions({accountId, txType, search, sortBy, sortDir, page, perPage})`
 - `src/api/upload.js` — `uploadCSV(file)`, `fetchSupportedBanks()`
 - `src/pages/Accounts.jsx` — Accounts list grouped by bank, create/edit inline, account type badges
 - `src/pages/Transactions.jsx` — Table with AUD formatting, category status column
@@ -180,6 +180,28 @@ Hardik Sanghavi (hardik.sanghavi@permaconn.com). Building a personal finance man
 - `tests/test_rules.py` — 14 tests: CRUD, apply, affected, recategorise, PATCH transaction
 - `tests/test_suggestions.py` — 15 tests: pattern extractor unit tests, suggestion lifecycle, accept/dismiss
 
+## Additional Features (built across sessions, outside chunks)
+
+### Sorting
+- `src/components/SortableHeader.jsx` — drop-in `<th>` replacement; props: `label`, `column`, `sort`, `onSort`, `align`
+- `src/hooks/useSortable.js` — manages `{ column, dir }` state + `sortData()` for client-side sorting
+- **Transactions** — server-side sort via `sort_by` + `sort_dir` query params; supported cols: `tx_date`, `tx_amount`, `tx_desc`, `tx_type`
+- **Categories + Rules** — client-side sort
+- **Bug note:** sort handlers must pass `onSort` directly (not wrap with inline `loadTransactions(1)` — causes stale-closure race condition)
+
+### Transfer Auto-Matching
+- `transfer_account_id` nullable FK on `transactions` table (added via startup migration)
+- When PATCH sets Transfer category + `transfer_account_id`, backend auto-finds the counterpart transaction on the other account (same amount, date ±2 days) and sets the opposite Transfer category + links back
+- Frontend shows teal "Matched" banner for 5s when a counterpart is found
+- Category select shows account picker (`→ which account?`) when Transfer In/Out is selected
+
+### Startup Migration Pattern
+- `information_schema.COLUMNS` check + `ALTER TABLE` for columns `create_all()` can't add to existing tables
+- Applied to: `transfer_account_id` on transactions
+
+### README.md
+- Created at repo root — covers features, tech stack, project structure, getting started, API overview, roadmap
+
 ## Chunk 7 — What Was Built (DONE)
 ### NAB CSV Format
 | Column | Notes |
@@ -202,6 +224,30 @@ Hardik Sanghavi (hardik.sanghavi@permaconn.com). Building a personal finance man
 - `tests/test_nab_parser.py` — 22 tests: header detection, amounts, dates, balance, dedup, upload integration
 
 ### Tests (95 passed, 5 skipped — all green)
+
+## Chunk 6 — What Was Built (DONE)
+### Backend
+- `app/routers/dashboard.py` — 3 endpoints, all exclude Transfer In/Out categories
+  - `GET /dashboard/summary` — total_income, total_expenses, net_savings, uncategorised_count
+  - `GET /dashboard/monthly` — month-by-month rows `{ month, income, expenses, savings }`; grouped by `DATE_FORMAT(tx_date, '%Y-%m')`
+  - `GET /dashboard/by-category?tx_type=Income|Expense` — `{ category_name, colour, amount }[]` sorted desc; uncategorised rows shown as "Uncategorised" bucket
+- `app/main.py` — dashboard router registered
+
+### Frontend
+- `src/api/dashboard.js` — `fetchDashboardSummary`, `fetchDashboardMonthly`, `fetchDashboardByCategory`
+- `src/pages/Dashboard.jsx` — full dashboard with:
+  - Date range picker (default: 3 months ago → today)
+  - 4 summary cards: Income · Expenses · Net Savings · Uncategorised count
+  - Monthly `ComposedChart`: Income + Expenses bars + Savings line (Recharts v3)
+  - 2 horizontal `BarChart`s: Spending by Category + Income by Category (top 14, coloured by category colour, amount labels)
+
+### User decisions (Chunk 6 scoping)
+- Net worth / balance tracking **postponed** — no dedicated chunk yet
+- Transfers excluded from all dashboard numbers (internal movements)
+- Uncategorised transactions included as "Uncategorised" bucket in category charts
+
+### Tests (107 passed, 5 skipped — all green)
+- `tests/test_dashboard.py` — 12 tests: summary totals, transfer exclusion, date filtering, monthly grouping, by-category income/expense, sort order, invalid type
 
 ## Chunk 4 — What Was Built (DONE)
 Implemented as part of Chunk 3 inside `app/routers/transactions.py`:
@@ -250,3 +296,42 @@ Full glossary, project details, and old DB schema are in the `memory/` directory
 - Use specialised agents for tasks
 - Every chunk must include working tests
 - Update CLAUDE.md after each chunk
+
+<!-- code-review-graph MCP tools -->
+## MCP Tools: code-review-graph
+
+**IMPORTANT: This project has a knowledge graph. ALWAYS use the
+code-review-graph MCP tools BEFORE using Grep/Glob/Read to explore
+the codebase.** The graph is faster, cheaper (fewer tokens), and gives
+you structural context (callers, dependents, test coverage) that file
+scanning cannot.
+
+### When to use graph tools FIRST
+
+- **Exploring code**: `semantic_search_nodes` or `query_graph` instead of Grep
+- **Understanding impact**: `get_impact_radius` instead of manually tracing imports
+- **Code review**: `detect_changes` + `get_review_context` instead of reading entire files
+- **Finding relationships**: `query_graph` with callers_of/callees_of/imports_of/tests_for
+- **Architecture questions**: `get_architecture_overview` + `list_communities`
+
+Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
+
+### Key Tools
+
+| Tool | Use when |
+|------|----------|
+| `detect_changes` | Reviewing code changes — gives risk-scored analysis |
+| `get_review_context` | Need source snippets for review — token-efficient |
+| `get_impact_radius` | Understanding blast radius of a change |
+| `get_affected_flows` | Finding which execution paths are impacted |
+| `query_graph` | Tracing callers, callees, imports, tests, dependencies |
+| `semantic_search_nodes` | Finding functions/classes by name or keyword |
+| `get_architecture_overview` | Understanding high-level codebase structure |
+| `refactor_tool` | Planning renames, finding dead code |
+
+### Workflow
+
+1. The graph auto-updates on file changes (via hooks).
+2. Use `detect_changes` for code review.
+3. Use `get_affected_flows` to understand impact.
+4. Use `query_graph` pattern="tests_for" to check coverage.

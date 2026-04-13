@@ -33,6 +33,8 @@ import app.models  # noqa: F401
 
 from app.routers.accounts import router as accounts_router
 from app.routers.categories import router as categories_router
+from app.routers.dashboard import router as dashboard_router
+from app.routers.investments import router as investments_router
 from app.routers.rules import router as rules_router
 from app.routers.transactions import router as transactions_router
 from app.routers.upload import router as upload_router
@@ -66,6 +68,26 @@ async def lifespan(app: FastAPI):
                     "ALTER TABLE transactions ADD COLUMN transfer_account_id INT NULL"
                 ))
                 logger.info("Migration: added transfer_account_id to transactions")
+    except Exception as e:
+        logger.warning("Migration check failed (non-fatal): %s", e)
+
+    # Schema migrations — add investment value columns to accounts
+    try:
+        async with engine.begin() as conn:
+            for col_name, col_def in [
+                ("current_value", "DECIMAL(12,2) NULL"),
+                ("current_value_at", "DATETIME NULL"),
+            ]:
+                exists = await conn.execute(text(
+                    "SELECT COUNT(*) FROM information_schema.COLUMNS "
+                    "WHERE TABLE_SCHEMA = DATABASE() "
+                    "AND TABLE_NAME = 'accounts' AND COLUMN_NAME = :col"
+                ), {"col": col_name})
+                if exists.scalar() == 0:
+                    await conn.execute(text(
+                        f"ALTER TABLE accounts ADD COLUMN {col_name} {col_def}"
+                    ))
+                    logger.info("Migration: added %s to accounts", col_name)
     except Exception as e:
         logger.warning("Migration check failed (non-fatal): %s", e)
 
@@ -103,6 +125,8 @@ app.add_middleware(
 # ── Register routers ─────────────────────────────────────────
 app.include_router(accounts_router)
 app.include_router(categories_router)
+app.include_router(dashboard_router)
+app.include_router(investments_router)
 app.include_router(rules_router)
 app.include_router(transactions_router)
 app.include_router(upload_router)

@@ -55,6 +55,9 @@ class Account(Base):
     linked_account_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("accounts.id"), nullable=True
     )
+    # Investment accounts only: manually-entered current portfolio value
+    current_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    current_value_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
