@@ -53,6 +53,8 @@ async def apply_rules_to_transactions(
             if rule.pattern.lower() in tx.tx_desc.lower():
                 tx.category_id = rule.category_id
                 tx.is_categorised = True
+                if rule.transfer_account_id:
+                    tx.transfer_account_id = rule.transfer_account_id
                 categorised_count += 1
                 break  # First matching rule wins
 

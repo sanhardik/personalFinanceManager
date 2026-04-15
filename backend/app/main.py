@@ -32,9 +32,11 @@ from app.database import (
 import app.models  # noqa: F401
 
 from app.routers.accounts import router as accounts_router
+from app.routers.assets import router as assets_router
 from app.routers.categories import router as categories_router
 from app.routers.dashboard import router as dashboard_router
 from app.routers.investments import router as investments_router
+from app.routers.loans import router as loans_router
 from app.routers.rules import router as rules_router
 from app.routers.transactions import router as transactions_router
 from app.routers.upload import router as upload_router
@@ -92,6 +94,48 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Migration check failed (non-fatal): %s", e)
 
+    # Schema migrations — add loan fields to accounts
+    try:
+        async with engine.begin() as conn:
+            for col_name, col_def in [
+                ("asset_id", "INT NULL"),
+                ("loan_original_amount", "DECIMAL(12,2) NULL"),
+                ("loan_interest_rate", "DECIMAL(6,4) NULL"),
+                ("loan_start_date", "DATETIME NULL"),
+                ("loan_term_years", "INT NULL"),
+                ("loan_repayment_type", "VARCHAR(30) NULL"),
+                ("offset_account_id", "INT NULL"),
+            ]:
+                exists = await conn.execute(text(
+                    "SELECT COUNT(*) FROM information_schema.COLUMNS "
+                    "WHERE TABLE_SCHEMA = DATABASE() "
+                    "AND TABLE_NAME = 'accounts' AND COLUMN_NAME = :col"
+                ), {"col": col_name})
+                if exists.scalar() == 0:
+                    await conn.execute(text(
+                        f"ALTER TABLE accounts ADD COLUMN {col_name} {col_def}"
+                    ))
+                    logger.info("Migration: added %s to accounts", col_name)
+    except Exception as e:
+        logger.warning("Migration: loan fields check failed (non-fatal): %s", e)
+
+    # Schema migrations — add transfer_account_id to rules + suggested_rules
+    try:
+        async with engine.begin() as conn:
+            for table in ("rules", "suggested_rules"):
+                exists = await conn.execute(text(
+                    "SELECT COUNT(*) FROM information_schema.COLUMNS "
+                    "WHERE TABLE_SCHEMA = DATABASE() "
+                    "AND TABLE_NAME = :tbl AND COLUMN_NAME = 'transfer_account_id'"
+                ), {"tbl": table})
+                if exists.scalar() == 0:
+                    await conn.execute(text(
+                        f"ALTER TABLE {table} ADD COLUMN transfer_account_id INT NULL"
+                    ))
+                    logger.info("Migration: added transfer_account_id to %s", table)
+    except Exception as e:
+        logger.warning("Migration: transfer_account_id on rules failed (non-fatal): %s", e)
+
     # Seed default categories + rules (idempotent — skips existing)
     try:
         async with async_session_factory() as session:
@@ -125,9 +169,11 @@ app.add_middleware(
 
 # ── Register routers ─────────────────────────────────────────
 app.include_router(accounts_router)
+app.include_router(assets_router)
 app.include_router(categories_router)
 app.include_router(dashboard_router)
 app.include_router(investments_router)
+app.include_router(loans_router)
 app.include_router(rules_router)
 app.include_router(transactions_router)
 app.include_router(upload_router)

@@ -1,19 +1,28 @@
 """
-Macquarie Bank CSV parser.
+Macquarie Bank CSV parser — handles both savings/transaction accounts and home loans.
 
-Macquarie CSV format:
+Macquarie CSV format (same header for savings and loans):
   Header: Transaction Date,Details,Account,Category,Subcategory,Tags,Notes,Debit,Credit,Balance,Original Description
-  Date format: DD Mon YYYY (e.g. "10 Apr 2026") — 4-digit year, unlike NAB's 2-digit
-  Account: text name column (e.g. "Main account") — NO account number in CSV
+  Date format: DD Mon YYYY (e.g. "10 Apr 2026") — 4-digit year
+  Account: text name column (e.g. "Main account", "Boondall") — NO account number in CSV
   Amounts:
-    - Debit  = money going out (expense) — positive value
-    - Credit = money coming in (income)  — positive value
-    - One is always empty for a given row
+    - Debit  = money going out (expense) — positive value, empty for income
+    - Credit = money coming in (income)  — positive value, empty for expense
   Balance: running balance after transaction
+    - Positive for savings accounts, negative for loan accounts (represents amount owed)
   Description: prefer "Original Description" (cleaner); fall back to "Details"
-  Account number: derived from account name slug (e.g. "Main account" → "MAC-MAIN-ACCOUNT")
-    because Macquarie does not include account numbers in CSV exports.
-    Users can rename the auto-created account after first upload.
+
+Loan detection (two-pass):
+  If any row for an account has Subcategory = "Interest", that account is a home_loan.
+  Loan account slugs include the drawdown amount to disambiguate duplicate names:
+    "Basic Home Loan" ($102,300 drawdown) → "MAC-BASIC-HOME-LOAN-102300"
+    "Basic Home Loan" ($134,200 drawdown) → "MAC-BASIC-HOME-LOAN-134200"
+  Savings account slugs are unchanged:
+    "Main account" → "MAC-MAIN-ACCOUNT"
+
+Auto-categorisation hints embedded in original_category for loan accounts:
+  Subcategory = "Interest"      → original_category includes "loan_interest"
+  Details contains "drawdown"   → original_category includes "loan_drawdown"
 """
 
 import csv
@@ -39,16 +48,24 @@ MACQUARIE_DATE_FORMAT = "%d %b %Y"
 def _account_slug(account_name: str) -> str:
     """
     Derive a stable pseudo account number from the account name.
-
     E.g. "Main account" → "MAC-MAIN-ACCOUNT"
-         "Offset account" → "MAC-OFFSET-ACCOUNT"
     """
     slug = re.sub(r"[^a-z0-9]+", "-", account_name.strip().lower()).strip("-").upper()
     return f"MAC-{slug}"
 
 
+def _parse_amount(value: str) -> float:
+    """Parse an amount string, returning 0.0 for empty or invalid input."""
+    if not value:
+        return 0.0
+    try:
+        return abs(float(value.replace(",", "")))
+    except ValueError:
+        return 0.0
+
+
 class MacquarieParser(BankParser):
-    """Parser for Macquarie Bank CSV exports."""
+    """Parser for Macquarie Bank CSV exports (savings accounts and home loans)."""
 
     @property
     def bank_name(self) -> str:
@@ -56,7 +73,7 @@ class MacquarieParser(BankParser):
 
     @property
     def description(self) -> str:
-        return "Macquarie Bank savings and transaction accounts"
+        return "Macquarie Bank savings, transaction accounts and home loans"
 
     @property
     def required_headers(self) -> list[str]:
@@ -68,17 +85,90 @@ class MacquarieParser(BankParser):
         return MACQUARIE_REQUIRED_HEADERS.issubset(headers)
 
     def parse(self, content: str) -> ParseResult:
-        """Parse Macquarie CSV content into transactions."""
+        """
+        Parse Macquarie CSV content — savings accounts and home loans.
+
+        Two-pass approach:
+          Pass 1: Collect all rows per account name; detect loans (Subcategory=Interest);
+                  find drawdown amounts for unique slug generation.
+          Pass 2: Parse each row using the account type + slug determined in pass 1.
+        """
         transactions: list[ParsedTransaction] = []
         accounts_found: set[str] = set()
         errors: list[str] = []
         skipped = 0
 
-        reader = csv.DictReader(io.StringIO(content))
+        # ── Pass 1: Classify accounts ─────────────────────────────────
+        all_rows = list(csv.DictReader(io.StringIO(content)))
 
-        for row_num, row in enumerate(reader, start=2):
+        # account_name → {is_loan, drawdown_amount}
+        account_meta: dict[str, dict] = {}
+
+        for row in all_rows:
+            account_name = row.get("Account", "").strip().strip('"')
+            subcategory = row.get("Subcategory", "").strip().strip('"')
+            details = row.get("Details", "").strip().strip('"')
+            orig_desc = row.get("Original Description", "").strip().strip('"')
+            debit_str = row.get("Debit", "").strip().strip('"')
+
+            if account_name not in account_meta:
+                account_meta[account_name] = {"is_loan": False, "drawdown_amount": None}
+
+            # Loan detection: interest CHARGED has Category="Financial" + Subcategory="Interest"
+            # (not Category="Income" + Subcategory="Interest" which is savings interest earned)
+            category = row.get("Category", "").strip().strip('"')
+            if subcategory.lower() == "interest" and category.lower() == "financial":
+                account_meta[account_name]["is_loan"] = True
+
+            # Find loan drawdown row to capture original amount
+            desc_lower = (orig_desc or details).lower()
+            if "drawdown" in desc_lower and debit_str:
+                try:
+                    amount = abs(float(debit_str.replace(",", "")))
+                    account_meta[account_name]["drawdown_amount"] = amount
+                except ValueError:
+                    pass
+
+        # ── Build unique slugs ────────────────────────────────────────
+        # Group account names by their base slug to detect collisions
+        base_slug_to_names: dict[str, list[str]] = {}
+        for name in account_meta:
+            base = _account_slug(name)
+            base_slug_to_names.setdefault(base, []).append(name)
+
+        name_to_slug: dict[str, str] = {}
+        for base_slug, names in base_slug_to_names.items():
+            if len(names) == 1:
+                # No collision — use plain slug
+                name_to_slug[names[0]] = base_slug
+            else:
+                # Collision — disambiguate by drawdown amount for loan accounts
+                for name in names:
+                    drawdown = account_meta[name].get("drawdown_amount")
+                    if drawdown:
+                        # Round to nearest dollar, no decimals
+                        amount_str = str(int(round(drawdown)))
+                        name_to_slug[name] = f"{base_slug}-{amount_str}"
+                    else:
+                        # Fallback: append a short hash of the name
+                        short_hash = abs(hash(name)) % 100000
+                        name_to_slug[name] = f"{base_slug}-{short_hash}"
+
+        # ── Pass 2: Parse rows ────────────────────────────────────────
+        for row_num, row in enumerate(all_rows, start=2):
             try:
-                tx = self._parse_row(row, row_num)
+                account_name = row.get("Account", "").strip().strip('"')
+                is_loan = account_meta.get(account_name, {}).get("is_loan", False)
+                account_number = name_to_slug.get(account_name, _account_slug(account_name))
+                account_type = "home_loan" if is_loan else "bank"
+
+                tx = self._parse_row(
+                    row=row,
+                    row_num=row_num,
+                    account_number=account_number,
+                    account_name=account_name,
+                    account_type=account_type,
+                )
                 if tx:
                     transactions.append(tx)
                     accounts_found.add(tx.account_number)
@@ -97,11 +187,17 @@ class MacquarieParser(BankParser):
             errors=errors,
         )
 
-    def _parse_row(self, row: dict, row_num: int) -> ParsedTransaction | None:
+    def _parse_row(
+        self,
+        row: dict,
+        row_num: int,
+        account_number: str,
+        account_name: str,
+        account_type: str,
+    ) -> ParsedTransaction | None:
         """Parse a single Macquarie CSV row into a ParsedTransaction."""
         date_str = row.get("Transaction Date", "").strip().strip('"')
         details = row.get("Details", "").strip().strip('"')
-        account_name = row.get("Account", "").strip().strip('"')
         category = row.get("Category", "").strip().strip('"')
         subcategory = row.get("Subcategory", "").strip().strip('"')
         debit_str = row.get("Debit", "").strip().strip('"')
@@ -132,7 +228,6 @@ class MacquarieParser(BankParser):
             tx_amount = debit
             tx_type = "Expense"
         else:
-            # Both zero — treat as expense (e.g. fee waived)
             tx_amount = 0.0
             tx_type = "Expense"
 
@@ -147,10 +242,7 @@ class MacquarieParser(BankParser):
             except ValueError:
                 pass
 
-        # Derive pseudo account number from account name (no account number in CSV)
-        account_number = _account_slug(account_name) if account_name else "MAC-UNKNOWN"
-
-        # Combine Macquarie category + subcategory as original_category
+        # Build original_category — include subcategory for rule matching
         if category and subcategory:
             original_category = f"{category} / {subcategory}"
         elif category:
@@ -160,21 +252,12 @@ class MacquarieParser(BankParser):
 
         return ParsedTransaction(
             account_number=account_number,
+            account_name=account_name,
             tx_date=tx_date,
             tx_desc=tx_desc,
             tx_amount=tx_amount,
             tx_type=tx_type,
             balance=balance,
             original_category=original_category,
-            account_type="bank",
+            account_type=account_type,
         )
-
-
-def _parse_amount(value: str) -> float:
-    """Parse an amount string, returning 0.0 for empty or invalid input."""
-    if not value:
-        return 0.0
-    try:
-        return abs(float(value.replace(",", "")))
-    except ValueError:
-        return 0.0

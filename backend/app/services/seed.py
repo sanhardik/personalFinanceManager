@@ -45,8 +45,12 @@ DEFAULT_CATEGORIES: list[tuple[str, str, str, str]] = [
     ("Tax", "Expense", "Calculator", "#dc2626"),
     ("Cash Withdrawal", "Expense", "Banknote", "#71717a"),
     ("Transfer Out", "Expense", "ArrowUpRight", "#64748b"),
+    ("Home Loan Interest", "Expense", "Percent", "#f97316"),
+    ("Loan Drawdown", "Expense", "Building2", "#78716c"),
+    ("Bank Fees", "Expense", "Receipt", "#94a3b8"),
     ("Other Expense", "Expense", "MoreHorizontal", "#94a3b8"),
     # ── Income categories ──
+    ("Home Loan Payment", "Income", "Home", "#22c55e"),
     ("Salary", "Income", "Briefcase", "#22c55e"),
     ("Interest", "Income", "Percent", "#3b82f6"),
     ("Dividends", "Income", "TrendingUp", "#8b5cf6"),
@@ -156,6 +160,10 @@ DEFAULT_RULES: list[tuple[str, str]] = [
     # Salary
     ("SALARY", "Salary"),
     ("PAYROLL", "Salary"),
+    # Home loan — matched against Macquarie loan CSV descriptions
+    ("Interest charged", "Home Loan Interest"),
+    ("Loan drawdown", "Loan Drawdown"),
+    ("Documentation fee", "Bank Fees"),
 ]
 
 

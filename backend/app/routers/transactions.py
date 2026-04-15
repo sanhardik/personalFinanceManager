@@ -26,7 +26,12 @@ def _tx_to_response(tx: Transaction) -> dict:
     """Build a TransactionResponse dict including computed relationship fields."""
     data = TransactionResponse.model_validate(tx).model_dump()
     data["category_name"] = tx.category.name if tx.category else None
-    data["transfer_account_name"] = tx.transfer_account.account_name if tx.transfer_account else None
+    if tx.transfer_account:
+        acc = tx.transfer_account
+        last4 = acc.account_number[-4:] if acc.account_number and len(acc.account_number) >= 4 else acc.account_number
+        data["transfer_account_name"] = f"{acc.account_name} (****{last4})"
+    else:
+        data["transfer_account_name"] = None
     return data
 
 
@@ -260,9 +265,16 @@ async def patch_transaction(
                         ids.append(tx_id)
                     suggestion.source_tx_ids = json.dumps(ids)
 
+                    # Keep transfer_account_id in sync with the latest manual categorisation
+                    suggestion.transfer_account_id = tx.transfer_account_id
+
                     # Option B: auto-promote when threshold reached
                     if suggestion.hit_count >= AUTO_PROMOTE_THRESHOLD:
-                        new_rule = Rule(pattern=pattern, category_id=body.category_id)
+                        new_rule = Rule(
+                            pattern=pattern,
+                            category_id=body.category_id,
+                            transfer_account_id=tx.transfer_account_id,
+                        )
                         db.add(new_rule)
                         await db.flush()
                         suggestion.status = "auto_promoted"
@@ -283,6 +295,7 @@ async def patch_transaction(
                     new_suggestion = SuggestedRule(
                         pattern=pattern,
                         category_id=body.category_id,
+                        transfer_account_id=tx.transfer_account_id,
                         hit_count=1,
                         status="pending",
                         source_tx_ids=json.dumps([tx_id]),
@@ -301,6 +314,28 @@ async def patch_transaction(
 
     response["rule_suggestion"] = rule_suggestion
     return response
+
+
+@router.delete("")
+async def delete_transactions_by_account(
+    account_id: int = Query(..., description="Account whose transactions to delete"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete all transactions for a given account. Requires account_id query param."""
+    account = await db.get(Account, account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    result = await db.execute(
+        select(func.count(Transaction.id)).where(Transaction.account_id == account_id)
+    )
+    count = result.scalar() or 0
+
+    await db.execute(
+        Transaction.__table__.delete().where(Transaction.account_id == account_id)
+    )
+    await db.commit()
+    return {"deleted": count, "account_id": account_id}
 
 
 @router.post("/bulk-categorise", response_model=BulkCategoriseResponse)

@@ -21,11 +21,12 @@ class ParsedTransaction:
     account_number: str
     tx_date: datetime
     tx_desc: str
-    tx_amount: float       # Positive = expense/debit, negative = income/credit
-    tx_type: str           # "Income" or "Expense"
-    balance: float | None  # Balance after transaction (if available)
-    original_category: str | None  # Category from bank CSV (if available)
-    account_type: str      # "bank" or "credit_card" — inferred by parser
+    tx_amount: float              # Positive = expense/debit, negative = income/credit
+    tx_type: str                  # "Income" or "Expense"
+    balance: float | None         # Balance after transaction (if available)
+    original_category: str | None # Category from bank CSV (if available)
+    account_type: str             # "bank", "credit_card", "home_loan" — inferred by parser
+    account_name: str = ""        # Human-readable account name (used for loan account naming)
 
 
 @dataclass

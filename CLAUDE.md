@@ -67,6 +67,7 @@ Hardik Sanghavi (hardik.sanghavi@permaconn.com). Building a personal finance man
 | 6 | Dashboard + Reports (charts, net worth, recent txns) | Done |
 | 7 | NAB parser + auto-detection | Done |
 | 8 | Macquarie parser | Done |
+| 9 | Home Loan Tracking — Assets, Loans pages, loan CSV detection, upload flow | Done |
 
 ## Chunk 1 — What Was Built (DONE)
 ### Backend (Python FastAPI)
@@ -276,6 +277,45 @@ Hardik Sanghavi (hardik.sanghavi@permaconn.com). Building a personal finance man
 ### Notes
 - Macquarie does not include account numbers in CSV exports — account number is derived as a slug from the account name column; user can rename the auto-created account after first upload
 - Loan accounts: user has 4 Macquarie loan accounts; loan CSV format TBD (may differ from savings)
+
+## Chunk 9 — What Was Built (DONE)
+### Home Loan Tracking — Assets, Loans, Upload Flow
+
+### Backend
+- `app/models.py` — New `Asset` model (asset_type: property/equity/stock_portfolio, address, purchase_price, current_value, is_rental, rental_income_monthly); Account extended with: asset_id FK, loan_original_amount, loan_interest_rate, loan_start_date, loan_term_years, loan_repayment_type (principal_and_interest/interest_only), offset_account_id (future)
+- `app/schemas.py` — AssetCreate/Update/Response; LoanSummaryResponse (current_balance, projected_payoff_date, asset nested); LoanHistoryRow (month, payment, interest, principal, balance); Account schemas extended with all loan fields
+- `app/routers/assets.py` — Full CRUD /assets; DELETE blocked 409 if linked loan accounts exist
+- `app/routers/loans.py` — `GET /loans`, `GET /loans/{id}/summary` (balance via ORDER BY tx_date DESC, tx_type DESC, id ASC), `GET /loans/{id}/history` (monthly grouping)
+- `app/routers/upload.py` — Added `POST /upload/detect` (parse without inserting, returns bank + accounts); added `account_id: int | None = Form(None)` to `POST /upload`
+- `app/services/upload.py` — Added `account_id_override` param to `process_csv_upload()`; validates account exists; routes all transactions to that account
+- `app/services/seed.py` — Added loan categories: Home Loan Interest (Expense), Home Loan Payment (Income), Loan Drawdown (Expense), Bank Fees (Expense); rules: "Interest charged"→Home Loan Interest, "Loan drawdown"→Loan Drawdown
+- `app/parsers/macquarie.py` — Full rewrite: two-pass loan detection (Pass 1: classify accounts + find drawdown amounts; Pass 2: parse rows); Loan detection requires BOTH Category=Financial AND Subcategory=Interest; Unique slug for duplicate names: MAC-BASIC-HOME-LOAN-102300
+- `app/parsers/base.py` — Added `account_name: str = ""` field to ParsedTransaction
+- `app/main.py` — Registered assets + loans routers; startup migrations for loan columns
+
+### Frontend
+- `src/pages/Assets.jsx` — Cards per asset type (property/equity/stock_portfolio); AssetForm with conditional property fields; capital growth; delete confirmation modal
+- `src/pages/Loans.jsx` — Loan cards: balance, % paid progress bar, rate, repayment type; projected payoff or "Interest Only" badge; LineChart (balance over time) + stacked BarChart (interest vs principal); summary totals; asset info panel (LVR, equity)
+- `src/pages/Accounts.jsx` — Create/edit form shows loan fields when account_type=home_loan: interest rate, repayment type, loan term, original amount, linked asset dropdown; view mode shows loan badges
+- `src/pages/UploadCSV.jsx` — Rewritten: three-step flow (bank → file/detect → account assignment → import); `detectCSV()` called after drop; AccountAssignment step shows dropdown per detected account (Create new or map to existing)
+- `src/api/assets.js`, `src/api/loans.js` — New API client files
+- `src/api/upload.js` — Added `detectCSV()` and `accountId` param to `uploadCSV()`
+- `src/components/Layout/Sidebar.jsx` + `src/App.jsx` — Added Loans + Assets nav items and routes
+
+### Macquarie Loan CSV Notes
+- Loan detection: BOTH `Category="Financial"` AND `Subcategory="Interest"` required (savings accounts also have Subcategory=Interest on interest income rows)
+- Duplicate account names (e.g. two "Basic Home Loan" accounts): disambiguated by drawdown amount suffix on slug
+- Balance ordering: payment row has lower ID than same-day interest row → use `tx_type DESC` as tiebreaker (Income > Expense alphabetically)
+- Projected payoff: uses last 92 days of Income transactions on the account (not category-filtered, because payments are rarely auto-categorised)
+
+### Test Fixtures Added
+- `tests/fixtures/macquarie_loan_sample.csv` — 6-row Boondall loan fixture
+- `tests/fixtures/macquarie_dual_loan_sample.csv` — Basic Home Loan disambiguation fixture
+
+### Tests (184 passed, 5 skipped — all green)
+- `tests/test_macquarie_loan_parser.py` — 14 tests: loan detection, account_type, slug, amounts, savings false-positive protection
+- `tests/test_assets.py` — 16 tests: CRUD, type validation, delete protection
+- `tests/test_loans.py` — 14 tests: list, summary (balance, interest, payoff), history, asset linkage
 
 ## Chunk 4 — What Was Built (DONE)
 Implemented as part of Chunk 3 inside `app/routers/transactions.py`:

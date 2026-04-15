@@ -409,7 +409,12 @@ export default function Transactions() {
                             onChange={e => handleCategorySelect(tx.id, e.target.value)}
                             className="px-2 py-1 border border-blue-400 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-40"
                           >
-                            <CategoryOptions categories={categories} includeEmpty />
+                            <CategoryOptions
+                              categories={[...categories]
+                                .filter(c => c.category_type === tx.tx_type)
+                                .sort((a, b) => a.name.localeCompare(b.name))}
+                              includeEmpty
+                            />
                           </select>
                           {awaitingTransferAccount && (
                             <>
@@ -421,9 +426,11 @@ export default function Transactions() {
                                 className="px-2 py-1 border border-blue-400 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-32"
                               >
                                 <option value="">— which account?</option>
-                                {accounts.filter(a => a.id !== tx.account_id).map(a => (
-                                  <option key={a.id} value={a.id}>{a.account_name || a.account_number}</option>
-                                ))}
+                                {accounts.filter(a => a.id !== tx.account_id).map(a => {
+                                  const last4 = a.account_number?.slice(-4);
+                                  const label = last4 ? `${a.account_name} (****${last4})` : a.account_name || a.account_number;
+                                  return <option key={a.id} value={a.id}>{label}</option>;
+                                })}
                               </select>
                               <button
                                 onClick={() => saveCategoryChange(tx.id, pendingCategoryId, pendingTransferAccountId || null)}
@@ -451,10 +458,7 @@ export default function Transactions() {
                               <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: getCategoryColour(tx.category_id) }} />
                               <span className="text-xs text-gray-700 group-hover:text-blue-600 transition-colors">{tx.category_name}</span>
                               {tx.transfer_account_name && (
-                                <>
-                                  <ArrowRight size={10} className="text-gray-400 flex-shrink-0" />
-                                  <span className="text-xs text-gray-500">{tx.transfer_account_name}</span>
-                                </>
+                                <span className="text-xs text-gray-500 ml-0.5">→ {tx.transfer_account_name}</span>
                               )}
                               {isPaired && (
                                 <Link2 size={11} className="text-teal-500 flex-shrink-0 ml-0.5" title="Matched transfer pair" />

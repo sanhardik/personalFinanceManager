@@ -15,5 +15,7 @@ export async function fetchTransactions({ accountId, txType, search, categorised
 }
 
 export const patchTransaction = (id, data) => api.patch(`/transactions/${id}`, data).then(r => r.data);
+export const deleteTransactionsByAccount = (accountId) =>
+  api.delete('/transactions', { params: { account_id: accountId } }).then(r => r.data);
 export const bulkCategorise = (transaction_ids, category_id) =>
   api.post('/transactions/bulk-categorise', { transaction_ids, category_id }).then(r => r.data);

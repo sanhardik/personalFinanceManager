@@ -17,6 +17,8 @@ import Categories from './pages/Categories';
 import Rules from './pages/Rules';
 import UploadCSV from './pages/UploadCSV';
 import Investments from './pages/Investments';
+import Loans from './pages/Loans';
+import Assets from './pages/Assets';
 import SettingsPage from './pages/SettingsPage';
 
 function App() {
@@ -31,6 +33,8 @@ function App() {
           <Route path="categories" element={<Categories />} />
           <Route path="rules" element={<Rules />} />
           <Route path="investments" element={<Investments />} />
+          <Route path="loans" element={<Loans />} />
+          <Route path="assets" element={<Assets />} />
           <Route path="upload" element={<UploadCSV />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>

@@ -50,6 +50,13 @@ async def create_account(
         if not linked.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="Linked account not found")
 
+    # Validate asset exists if provided
+    if payload.asset_id:
+        from app.models import Asset
+        asset = await db.execute(select(Asset).where(Asset.id == payload.asset_id))
+        if not asset.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Asset not found")
+
     account = Account(
         account_number=payload.account_number,
         account_name=payload.account_name,
@@ -57,6 +64,13 @@ async def create_account(
         account_type=payload.account_type,
         bsb=payload.bsb,
         linked_account_id=payload.linked_account_id,
+        asset_id=payload.asset_id,
+        loan_original_amount=payload.loan_original_amount,
+        loan_interest_rate=payload.loan_interest_rate,
+        loan_start_date=payload.loan_start_date,
+        loan_term_years=payload.loan_term_years,
+        loan_repayment_type=payload.loan_repayment_type,
+        offset_account_id=payload.offset_account_id,
     )
     db.add(account)
     await db.commit()
@@ -106,6 +120,13 @@ async def accounts_summary(
             "bsb": acc.bsb,
             "is_active": acc.is_active,
             "linked_account_id": acc.linked_account_id,
+            "asset_id": acc.asset_id,
+            "loan_original_amount": acc.loan_original_amount,
+            "loan_interest_rate": acc.loan_interest_rate,
+            "loan_start_date": acc.loan_start_date.isoformat() if acc.loan_start_date else None,
+            "loan_term_years": acc.loan_term_years,
+            "loan_repayment_type": acc.loan_repayment_type,
+            "offset_account_id": acc.offset_account_id,
             "transaction_count": tx_count,
             "latest_balance": latest[0] if latest else None,
             "latest_tx_date": latest[1].isoformat() if latest else None,

@@ -42,7 +42,7 @@ async def create_rule(body: RuleCreate, db: AsyncSession = Depends(get_db)):
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
 
-    rule = Rule(pattern=body.pattern, category_id=body.category_id)
+    rule = Rule(pattern=body.pattern, category_id=body.category_id, transfer_account_id=body.transfer_account_id)
     db.add(rule)
     await db.commit()
     await db.refresh(rule)
@@ -140,7 +140,11 @@ async def accept_suggestion(suggestion_id: int, db: AsyncSession = Depends(get_d
     rule = existing_result.scalar_one_or_none()
 
     if not rule:
-        rule = Rule(pattern=suggestion.pattern, category_id=suggestion.category_id)
+        rule = Rule(
+            pattern=suggestion.pattern,
+            category_id=suggestion.category_id,
+            transfer_account_id=suggestion.transfer_account_id,
+        )
         db.add(rule)
         await db.flush()
 
