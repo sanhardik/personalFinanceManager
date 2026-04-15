@@ -2,6 +2,7 @@
 SQLAlchemy ORM models for Personal Finance Manager.
 
 Tables:
+- assets: Real assets (properties, equity, stock portfolios)
 - accounts: Bank accounts, credit cards, home loans
 - categories: Transaction categories (Groceries, Salary, etc.)
 - transactions: Bank transactions linked to accounts and categories
@@ -28,6 +29,51 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
+class Asset(Base):
+    """
+    A real-world asset that accounts (loans) can be linked to.
+
+    asset_type values:
+      - "property"        — real estate (captures address, purchase price, rental)
+      - "equity"          — equity loan / line of credit (no property fields)
+      - "stock_portfolio" — stock/investment portfolio (model-ready, no UI yet)
+    """
+
+    __tablename__ = "assets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    asset_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    asset_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="property"
+    )  # "property", "equity", "stock_portfolio"
+
+    # Property fields — only relevant when asset_type = "property"
+    address_street: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    address_suburb: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    address_state: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    address_postcode: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    purchase_price: Mapped[float | None] = mapped_column(Float(precision=2), nullable=True)
+    purchase_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    current_value: Mapped[float | None] = mapped_column(Float(precision=2), nullable=True)
+    current_value_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    is_rental: Mapped[bool] = mapped_column(Boolean, default=False)
+    rental_income_monthly: Mapped[float | None] = mapped_column(Float(precision=2), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+    # Relationships
+    accounts: Mapped[list["Account"]] = relationship(
+        "Account",
+        back_populates="asset",
+        foreign_keys="Account.asset_id",
+    )
+
+    def __repr__(self) -> str:
+        return f"<Asset {self.asset_name} ({self.asset_type})>"
+
+
 class Account(Base):
     """
     Bank account, credit card, or home loan.
@@ -38,8 +84,10 @@ class Account(Base):
       - "home_loan"   — mortgage / home loan
       - "investment"  — investment / brokerage account (e.g. Spaceship, CommSec)
 
-    linked_account_id: optional FK to the bank account that pays this
-    account (e.g. home loan paid from a bank account).
+    linked_account_id: optional FK to the bank account that pays this account.
+    asset_id: optional FK to an Asset this loan is secured against.
+    loan_repayment_type: "principal_and_interest" or "interest_only"
+    offset_account_id: future — linked offset account (reduces interest).
     """
 
     __tablename__ = "accounts"
@@ -51,14 +99,30 @@ class Account(Base):
     bsb: Mapped[str | None] = mapped_column(String(10), nullable=True)
     account_type: Mapped[str] = mapped_column(
         String(50), nullable=False, default="bank"
-    )  # "bank", "credit_card", "home_loan"
+    )  # "bank", "credit_card", "home_loan", "investment"
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     linked_account_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("accounts.id"), nullable=True
     )
-    # Investment accounts only: manually-entered current portfolio value
+    # Investment accounts: manually-entered current portfolio value
     current_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     current_value_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # Loan fields — only relevant when account_type = "home_loan"
+    asset_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
+    )
+    loan_original_amount: Mapped[float | None] = mapped_column(Float(precision=2), nullable=True)
+    loan_interest_rate: Mapped[float | None] = mapped_column(Float, nullable=True)  # % p.a.
+    loan_start_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    loan_term_years: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    loan_repayment_type: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
+    )  # "principal_and_interest" or "interest_only"
+    offset_account_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("accounts.id"), nullable=True
+    )  # Future: linked offset account
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
@@ -71,6 +135,9 @@ class Account(Base):
     )
     linked_account: Mapped["Account | None"] = relationship(
         "Account", remote_side="Account.id", foreign_keys=[linked_account_id]
+    )
+    asset: Mapped["Asset | None"] = relationship(
+        "Asset", back_populates="accounts", foreign_keys=[asset_id]
     )
 
     def __repr__(self) -> str:
@@ -184,6 +251,9 @@ class Rule(Base):
     category_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("categories.id"), nullable=False
     )
+    transfer_account_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("accounts.id"), nullable=True
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
@@ -216,6 +286,9 @@ class SuggestedRule(Base):
     pattern: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
     category_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("categories.id"), nullable=False
+    )
+    transfer_account_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("accounts.id"), nullable=True
     )
     hit_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     status: Mapped[str] = mapped_column(

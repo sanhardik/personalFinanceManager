@@ -1,25 +1,45 @@
+/**
+ * Upload CSV page — three-step flow:
+ *
+ * Step 1: Select bank
+ * Step 2: Drop/select file → auto-detect bank + accounts (no insert yet)
+ * Step 3: For each detected account, choose "create new" or link to existing account
+ *         → confirm → upload and insert transactions
+ */
+
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Upload, FileUp, CheckCircle2, AlertCircle, Loader2, X,
-  ChevronLeft, FileText,
+  ChevronLeft, FileText, Home, Building2, CreditCard,
 } from 'lucide-react';
-import { uploadCSV, fetchSupportedBanks } from '../api/upload';
+import { detectCSV, uploadCSV, fetchSupportedBanks } from '../api/upload';
+import { fetchAccountsSummary } from '../api/accounts';
 
-// Domain used to fetch the bank logo via Clearbit (fallback: Google favicons)
 const BANK_DOMAINS = {
   Westpac: 'westpac.com.au',
   NAB: 'nab.com.au',
   Macquarie: 'macquarie.com',
 };
 
+const ACCOUNT_TYPE_ICON = {
+  home_loan: Home,
+  credit_card: CreditCard,
+  bank: Building2,
+};
+
+const ACCOUNT_TYPE_LABEL = {
+  home_loan: 'Home Loan',
+  credit_card: 'Credit Card',
+  bank: 'Bank Account',
+};
+
+// ── Bank logo ─────────────────────────────────────────────────
+
 function BankLogo({ bankName }) {
   const domain = BANK_DOMAINS[bankName];
-  const [src, setSrc] = useState(
-    domain ? `https://logo.clearbit.com/${domain}` : null,
-  );
+  const [src, setSrc] = useState(domain ? `https://logo.clearbit.com/${domain}` : null);
   const [failed, setFailed] = useState(!domain);
 
-  // On error, fall back to Google's favicon service, then to initials
   const handleError = () => {
     if (src?.includes('clearbit')) {
       setSrc(`https://www.google.com/s2/favicons?sz=64&domain=${domain}`);
@@ -29,7 +49,6 @@ function BankLogo({ bankName }) {
   };
 
   if (failed || !src) {
-    // Initials fallback
     const initials = bankName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
     return (
       <div className="w-10 h-10 rounded-lg bg-gray-200 flex items-center justify-center shrink-0">
@@ -37,54 +56,34 @@ function BankLogo({ bankName }) {
       </div>
     );
   }
-
   return (
     <div className="w-10 h-10 rounded-lg bg-white border border-gray-100 flex items-center justify-center shrink-0 overflow-hidden p-1">
-      <img
-        src={src}
-        alt={`${bankName} logo`}
-        onError={handleError}
-        className="w-full h-full object-contain"
-      />
+      <img src={src} alt={`${bankName} logo`} onError={handleError} className="w-full h-full object-contain" />
     </div>
   );
 }
 
-// ── Bank picker ───────────────────────────────────────────────
+// ── Bank card ─────────────────────────────────────────────────
 
 function BankCard({ bank, selected, onClick }) {
   return (
-    <button
-      onClick={() => onClick(bank)}
-      className={`
-        w-full text-left p-4 rounded-xl border-2 transition-all
-        ${selected
-          ? 'border-blue-500 bg-blue-50'
-          : 'border-gray-200 bg-white hover:border-blue-300 hover:bg-gray-50'
-        }
-      `}
+    <button onClick={() => onClick(bank)}
+      className={`w-full text-left p-4 rounded-xl border-2 transition-all ${
+        selected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:border-blue-300 hover:bg-gray-50'
+      }`}
     >
       <div className="flex items-start gap-3">
         <BankLogo bankName={bank.name} />
         <div className="min-w-0 flex-1">
-          <p className={`font-medium text-sm ${selected ? 'text-blue-700' : 'text-gray-800'}`}>
-            {bank.name}
-          </p>
+          <p className={`font-medium text-sm ${selected ? 'text-blue-700' : 'text-gray-800'}`}>{bank.name}</p>
           <p className="text-xs text-gray-400 mt-0.5">{bank.description}</p>
           <div className="flex flex-wrap gap-1 mt-2">
             {bank.required_headers.map(col => (
-              <span
-                key={col}
-                className="px-1.5 py-0.5 bg-gray-100 text-gray-500 text-xs rounded font-mono"
-              >
-                {col}
-              </span>
+              <span key={col} className="px-1.5 py-0.5 bg-gray-100 text-gray-500 text-xs rounded font-mono">{col}</span>
             ))}
           </div>
         </div>
-        {selected && (
-          <CheckCircle2 size={16} className="text-blue-500 shrink-0 mt-0.5" />
-        )}
+        {selected && <CheckCircle2 size={16} className="text-blue-500 shrink-0 mt-0.5" />}
       </div>
     </button>
   );
@@ -92,7 +91,7 @@ function BankCard({ bank, selected, onClick }) {
 
 // ── Drop zone ─────────────────────────────────────────────────
 
-function DropZone({ bank, onFile, uploading }) {
+function DropZone({ bank, onFile, detecting }) {
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -102,51 +101,30 @@ function DropZone({ bank, onFile, uploading }) {
     onFile(e.dataTransfer.files[0]);
   }, [onFile]);
 
-  const onDragOver = useCallback((e) => { e.preventDefault(); setDragging(true); }, []);
-  const onDragLeave = useCallback(() => setDragging(false), []);
-  const onFileSelect = useCallback((e) => {
-    onFile(e.target.files[0]);
-    e.target.value = '';
-  }, [onFile]);
-
   return (
     <div>
-      {/* Format reminder */}
       <div className="mb-4 p-3 bg-blue-50 border border-blue-100 rounded-lg flex items-start gap-2">
         <FileText size={15} className="text-blue-500 mt-0.5 shrink-0" />
         <div>
-          <p className="text-xs font-medium text-blue-700">
-            {bank.name} CSV format — expected columns:
-          </p>
-          <p className="text-xs text-blue-600 mt-0.5 font-mono">
-            {bank.required_headers.join(', ')}
-          </p>
+          <p className="text-xs font-medium text-blue-700">{bank.name} CSV — expected columns:</p>
+          <p className="text-xs text-blue-600 mt-0.5 font-mono">{bank.required_headers.join(', ')}</p>
         </div>
       </div>
-
       <div
         onDrop={onDrop}
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onClick={() => !uploading && fileInputRef.current?.click()}
-        className={`
-          bg-white rounded-xl border-2 border-dashed p-12 text-center cursor-pointer transition-all
-          ${dragging ? 'border-blue-400 bg-blue-50' : 'border-gray-300 hover:border-blue-300 hover:bg-gray-50'}
-          ${uploading ? 'pointer-events-none opacity-60' : ''}
-        `}
+        onDragOver={e => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onClick={() => !detecting && fileInputRef.current?.click()}
+        className={`bg-white rounded-xl border-2 border-dashed p-12 text-center cursor-pointer transition-all ${
+          dragging ? 'border-blue-400 bg-blue-50' : 'border-gray-300 hover:border-blue-300 hover:bg-gray-50'
+        } ${detecting ? 'pointer-events-none opacity-60' : ''}`}
       >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".csv"
-          onChange={onFileSelect}
-          className="hidden"
-        />
-        {uploading ? (
+        <input ref={fileInputRef} type="file" accept=".csv" className="hidden"
+          onChange={e => { onFile(e.target.files[0]); e.target.value = ''; }} />
+        {detecting ? (
           <div>
             <Loader2 size={40} className="animate-spin text-blue-500 mx-auto mb-3" />
-            <p className="text-gray-600 font-medium">Processing CSV...</p>
-            <p className="text-sm text-gray-400 mt-1">Validating format and importing transactions</p>
+            <p className="text-gray-600 font-medium">Reading file…</p>
           </div>
         ) : (
           <div>
@@ -156,6 +134,72 @@ function DropZone({ bank, onFile, uploading }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Account assignment step ───────────────────────────────────
+
+function AccountAssignment({ detected, existingAccounts, assignments, onChange }) {
+  return (
+    <div className="space-y-4">
+      {detected.map((acc) => {
+        const Icon = ACCOUNT_TYPE_ICON[acc.account_type] || Building2;
+        const typeLabel = ACCOUNT_TYPE_LABEL[acc.account_type] || acc.account_type;
+        const currentAssignment = assignments[acc.account_number] ?? '';
+
+        // Suggest matching existing accounts (same bank + type, or similar name)
+        const suggestions = existingAccounts.filter(a =>
+          a.account_type === acc.account_type ||
+          a.account_name?.toLowerCase().includes(acc.account_name?.toLowerCase().split(' ')[0])
+        );
+
+        return (
+          <div key={acc.account_number}
+            className="bg-white border border-gray-200 rounded-xl p-4">
+            <div className="flex items-center gap-3 mb-3">
+              <span className={`p-2 rounded-lg ${acc.account_type === 'home_loan' ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}>
+                <Icon size={16} />
+              </span>
+              <div>
+                <p className="font-medium text-sm text-gray-900">{acc.account_name}</p>
+                <p className="text-xs text-gray-400">{typeLabel} · detected in CSV</p>
+              </div>
+            </div>
+
+            <label className="block text-xs font-medium text-gray-700 mb-1.5">
+              Assign to account
+            </label>
+            <select
+              value={currentAssignment}
+              onChange={e => onChange(acc.account_number, e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Create new account "{acc.account_name}"</option>
+              <optgroup label="Existing accounts">
+                {existingAccounts.map(a => (
+                  <option key={a.id} value={a.id}>
+                    {a.account_name}
+                    {a.bsb ? ` (${a.bsb})` : ''}
+                    {` — ${ACCOUNT_TYPE_LABEL[a.account_type] || a.account_type}`}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+
+            {currentAssignment === '' && (
+              <p className="text-xs text-blue-600 mt-1.5">
+                A new account will be created automatically.
+              </p>
+            )}
+            {currentAssignment !== '' && (
+              <p className="text-xs text-green-600 mt-1.5">
+                Transactions will be added to the selected account.
+              </p>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -178,33 +222,25 @@ function UploadResult({ result, onReset }) {
             </p>
           </div>
         </div>
-        <button
-          onClick={onReset}
-          className="text-xs text-green-600 hover:text-green-800 px-3 py-1.5 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
-        >
+        <button onClick={onReset}
+          className="text-xs text-green-600 hover:text-green-800 px-3 py-1.5 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
           Upload another
         </button>
       </div>
 
       <div className="p-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Stat label="Total Rows" value={result.total_rows} />
-        <Stat label="Imported" value={result.inserted} colour="text-green-600" />
-        <Stat label="Duplicates" value={result.duplicates} colour="text-yellow-600" />
-        <Stat label="Accounts" value={result.accounts_found.length} />
-      </div>
-
-      {result.accounts_found.length > 0 && (
-        <div className="px-4 pb-4">
-          <p className="text-xs text-gray-400 mb-1">Accounts found:</p>
-          <div className="flex flex-wrap gap-2">
-            {result.accounts_found.map((acc) => (
-              <span key={acc} className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-md font-mono">
-                {acc}
-              </span>
-            ))}
+        {[
+          { label: 'Total Rows', value: result.total_rows },
+          { label: 'Imported', value: result.inserted, colour: 'text-green-600' },
+          { label: 'Duplicates', value: result.duplicates, colour: 'text-yellow-600' },
+          { label: 'Accounts', value: result.accounts_found.length },
+        ].map(s => (
+          <div key={s.label} className="text-center">
+            <p className={`text-2xl font-bold ${s.colour || 'text-gray-800'}`}>{s.value}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{s.label}</p>
           </div>
-        </div>
-      )}
+        ))}
+      </div>
 
       {result.errors.length > 0 && (
         <div className="px-4 pb-4">
@@ -224,13 +260,25 @@ function UploadResult({ result, onReset }) {
 
 export default function UploadCSV() {
   const [banks, setBanks] = useState([]);
+  const [existingAccounts, setExistingAccounts] = useState([]);
   const [selectedBank, setSelectedBank] = useState(null);
+
+  // Step tracking: 'bank' | 'file' | 'assign' | 'done'
+  const [step, setStep] = useState('bank');
+
+  const [detecting, setDetecting] = useState(false);
+  const [detectedFile, setDetectedFile] = useState(null);
+  const [detectedInfo, setDetectedInfo] = useState(null); // { bank_name, accounts, row_count }
+  const [assignments, setAssignments] = useState({}); // account_number → existing account_id (or '')
+
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetchSupportedBanks().then(setBanks).catch(() => {});
+    Promise.all([fetchSupportedBanks(), fetchAccountsSummary()])
+      .then(([b, a]) => { setBanks(b); setExistingAccounts(a); })
+      .catch(() => {});
   }, []);
 
   const handleFile = useCallback(async (file) => {
@@ -239,27 +287,65 @@ export default function UploadCSV() {
       setError('Only CSV files are supported');
       return;
     }
-
-    setUploading(true);
     setError(null);
-    setResult(null);
+    setDetecting(true);
+    setDetectedFile(file);
 
     try {
-      const data = await uploadCSV(file, selectedBank?.name ?? null);
-      setResult(data);
+      const info = await detectCSV(file);
+      setDetectedInfo(info);
+      // Pre-fill assignments: empty (create new) for all detected accounts
+      const init = {};
+      info.accounts.forEach(a => { init[a.account_number] = ''; });
+      setAssignments(init);
+      setStep('assign');
     } catch (err) {
-      const detail = err.response?.data?.detail || 'Upload failed';
-      setError(detail);
+      setError(err.response?.data?.detail || 'Failed to read file');
+    } finally {
+      setDetecting(false);
+    }
+  }, []);
+
+  const handleUpload = async () => {
+    if (!detectedFile) return;
+    setUploading(true);
+    setError(null);
+
+    try {
+      // For single-account files, pass the account_id override if selected
+      // (for multi-account files, account_id_override is not supported — use auto-create)
+      const detectedAccounts = detectedInfo?.accounts ?? [];
+      const singleAccountId = detectedAccounts.length === 1
+        ? (assignments[detectedAccounts[0].account_number] || null)
+        : null;
+
+      const data = await uploadCSV(
+        detectedFile,
+        selectedBank?.name ?? null,
+        singleAccountId ? parseInt(singleAccountId) : null,
+      );
+      setResult(data);
+      setStep('done');
+      // Refresh existing accounts for next upload
+      fetchAccountsSummary().then(setExistingAccounts).catch(() => {});
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Upload failed');
     } finally {
       setUploading(false);
     }
-  }, [selectedBank]);
+  };
 
   const reset = () => {
     setResult(null);
     setError(null);
     setSelectedBank(null);
+    setDetectedFile(null);
+    setDetectedInfo(null);
+    setAssignments({});
+    setStep('bank');
   };
+
+  const stepNum = step === 'bank' ? 1 : step === 'file' || step === 'assign' ? 2 : 3;
 
   return (
     <div>
@@ -269,81 +355,126 @@ export default function UploadCSV() {
         <h2 className="text-xl font-semibold text-gray-800">Upload CSV</h2>
       </div>
 
-      {/* Success result */}
-      {result ? (
+      {step === 'done' && result ? (
         <UploadResult result={result} onReset={reset} />
       ) : (
-        <>
-          {/* Step 1 — Bank selection */}
-          <div className="mb-6">
+        <div className="space-y-6">
+          {/* Step 1 — Bank */}
+          <div>
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm font-medium text-gray-700">
-                <span className="inline-flex items-center justify-center w-5 h-5 bg-blue-600 text-white text-xs rounded-full mr-2">1</span>
+                <span className={`inline-flex items-center justify-center w-5 h-5 text-white text-xs rounded-full mr-2 ${stepNum >= 1 ? 'bg-blue-600' : 'bg-gray-300'}`}>1</span>
                 Select your bank
               </p>
-              {selectedBank && (
-                <button
-                  onClick={() => { setSelectedBank(null); setError(null); }}
-                  className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1"
-                >
+              {selectedBank && step !== 'bank' && (
+                <button onClick={() => { setSelectedBank(null); setDetectedFile(null); setDetectedInfo(null); setStep('bank'); setError(null); }}
+                  className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1">
                   <ChevronLeft size={12} /> Change
                 </button>
               )}
             </div>
-
-            {banks.length === 0 ? (
-              <div className="flex items-center gap-2 text-gray-400 text-sm py-4">
-                <Loader2 size={16} className="animate-spin" /> Loading banks...
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {banks.map(bank => (
-                  <BankCard
-                    key={bank.name}
-                    bank={bank}
-                    selected={selectedBank?.name === bank.name}
-                    onClick={(b) => { setSelectedBank(b); setError(null); }}
-                  />
-                ))}
+            {step === 'bank' && (
+              banks.length === 0 ? (
+                <div className="flex items-center gap-2 text-gray-400 text-sm py-4">
+                  <Loader2 size={16} className="animate-spin" /> Loading banks…
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {banks.map(bank => (
+                    <BankCard key={bank.name} bank={bank} selected={false}
+                      onClick={b => { setSelectedBank(b); setStep('file'); setError(null); }} />
+                  ))}
+                </div>
+              )
+            )}
+            {selectedBank && step !== 'bank' && (
+              <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
+                <BankLogo bankName={selectedBank.name} />
+                <div>
+                  <p className="text-sm font-medium text-blue-800">{selectedBank.name}</p>
+                  <p className="text-xs text-blue-500">{selectedBank.description}</p>
+                </div>
+                <CheckCircle2 size={16} className="text-blue-500 ml-auto" />
               </div>
             )}
           </div>
 
-          {/* Step 2 — File upload (only after bank selected) */}
-          {selectedBank && (
+          {/* Step 2 — File */}
+          {(step === 'file' || step === 'assign') && selectedBank && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-medium text-gray-700">
+                  <span className={`inline-flex items-center justify-center w-5 h-5 text-white text-xs rounded-full mr-2 ${stepNum >= 2 ? 'bg-blue-600' : 'bg-gray-300'}`}>2</span>
+                  Select CSV file
+                </p>
+                {step === 'assign' && (
+                  <button onClick={() => { setDetectedFile(null); setDetectedInfo(null); setStep('file'); setError(null); }}
+                    className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1">
+                    <ChevronLeft size={12} /> Change file
+                  </button>
+                )}
+              </div>
+
+              {step === 'file' && (
+                <DropZone bank={selectedBank} onFile={handleFile} detecting={detecting} />
+              )}
+
+              {step === 'assign' && detectedInfo && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+                  <FileText size={16} className="text-green-600" />
+                  <div>
+                    <p className="text-sm font-medium text-green-800">{detectedFile?.name}</p>
+                    <p className="text-xs text-green-600">
+                      {detectedInfo.bank_name} · {detectedInfo.row_count} rows · {detectedInfo.accounts.length} account{detectedInfo.accounts.length !== 1 ? 's' : ''} detected
+                    </p>
+                  </div>
+                  <CheckCircle2 size={16} className="text-green-500 ml-auto" />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Step 3 — Assign accounts */}
+          {step === 'assign' && detectedInfo && (
             <div>
               <p className="text-sm font-medium text-gray-700 mb-3">
-                <span className="inline-flex items-center justify-center w-5 h-5 bg-blue-600 text-white text-xs rounded-full mr-2">2</span>
-                Upload your {selectedBank.name} CSV
+                <span className="inline-flex items-center justify-center w-5 h-5 bg-blue-600 text-white text-xs rounded-full mr-2">3</span>
+                Assign to account
               </p>
-              <DropZone bank={selectedBank} onFile={handleFile} uploading={uploading} />
+              <AccountAssignment
+                detected={detectedInfo.accounts}
+                existingAccounts={existingAccounts}
+                assignments={assignments}
+                onChange={(num, val) => setAssignments(prev => ({ ...prev, [num]: val }))}
+              />
+
+              <button
+                onClick={handleUpload}
+                disabled={uploading}
+                className="mt-4 w-full py-3 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {uploading ? (
+                  <><Loader2 size={16} className="animate-spin" /> Importing transactions…</>
+                ) : (
+                  <><Upload size={16} /> Import Transactions</>
+                )}
+              </button>
             </div>
           )}
 
           {/* Error */}
           {error && (
-            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
               <AlertCircle size={20} className="text-red-500 mt-0.5 shrink-0" />
               <div className="flex-1">
-                <p className="text-red-700 font-medium text-sm">Upload Failed</p>
+                <p className="text-red-700 font-medium text-sm">Error</p>
                 <p className="text-red-600 text-sm mt-1">{error}</p>
               </div>
-              <button onClick={() => setError(null)}>
-                <X size={16} className="text-red-400" />
-              </button>
+              <button onClick={() => setError(null)}><X size={16} className="text-red-400" /></button>
             </div>
           )}
-        </>
+        </div>
       )}
-    </div>
-  );
-}
-
-function Stat({ label, value, colour = 'text-gray-800' }) {
-  return (
-    <div className="text-center">
-      <p className={`text-2xl font-bold ${colour}`}>{value}</p>
-      <p className="text-xs text-gray-400 mt-0.5">{label}</p>
     </div>
   );
 }

@@ -19,6 +19,8 @@ import {
   Settings,
   Landmark,
   TrendingUp,
+  Home,
+  Building2,
 } from 'lucide-react';
 
 /**
@@ -31,6 +33,8 @@ const navItems = [
   { to: '/accounts', label: 'Accounts', icon: Landmark },
   { to: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
   { to: '/investments', label: 'Investments', icon: TrendingUp },
+  { to: '/loans', label: 'Loans', icon: Home },
+  { to: '/assets', label: 'Assets', icon: Building2 },
   { to: '/categories', label: 'Categories', icon: Tags },
   { to: '/rules', label: 'Rules', icon: BookOpen },
   { to: '/upload', label: 'Upload CSV', icon: Upload },

@@ -17,10 +17,64 @@ from app.services.upload import process_csv_upload
 router = APIRouter(prefix="/upload", tags=["upload"])
 
 
+async def _read_csv(file: UploadFile) -> str:
+    """Read and decode an uploaded CSV file."""
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files are supported")
+    try:
+        raw = await file.read()
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        try:
+            return raw.decode("latin-1")
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not decode file. Expected UTF-8 or Latin-1 encoding.",
+            )
+
+
+@router.post("/detect")
+async def detect_csv(file: UploadFile = File(...)):
+    """
+    Parse a CSV without inserting — returns detected bank name and account names.
+    Used by the frontend to show an account-assignment step before committing the upload.
+    """
+    content = await _read_csv(file)
+    if not content.strip():
+        raise HTTPException(status_code=400, detail="File is empty")
+
+    first_line = content.split("\n", 1)[0].strip()
+    parser = detect_parser(first_line)
+    if not parser:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unrecognised CSV format. Could not detect bank from header.",
+        )
+
+    result = parser.parse(content)
+    # Collect unique accounts from parsed transactions
+    seen = {}
+    for tx in result.transactions:
+        if tx.account_number not in seen:
+            seen[tx.account_number] = {
+                "account_number": tx.account_number,
+                "account_name": tx.account_name or tx.account_number,
+                "account_type": tx.account_type,
+            }
+
+    return {
+        "bank_name": result.bank_name,
+        "accounts": list(seen.values()),
+        "row_count": result.row_count,
+    }
+
+
 @router.post("", response_model=UploadResponse)
 async def upload_csv(
     file: UploadFile = File(...),
     bank: str | None = Form(None),
+    account_id: int | None = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -36,19 +90,7 @@ async def upload_csv(
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are supported")
 
-    # Read file content
-    try:
-        raw = await file.read()
-        content = raw.decode("utf-8-sig")  # utf-8-sig handles BOM from Excel
-    except UnicodeDecodeError:
-        try:
-            content = raw.decode("latin-1")
-        except Exception:
-            raise HTTPException(
-                status_code=400,
-                detail="Could not decode file. Expected UTF-8 or Latin-1 encoding.",
-            )
-
+    content = await _read_csv(file)
     if not content.strip():
         raise HTTPException(status_code=400, detail="File is empty")
 
@@ -81,10 +123,9 @@ async def upload_csv(
                 ),
             )
 
-    # Process the upload
+    # Process the upload (with optional account_id override)
     try:
-        result = process_csv_upload(content, db)
-        # Handle both sync and async returns
+        result = process_csv_upload(content, db, account_id_override=account_id)
         if hasattr(result, "__await__"):
             result = await result
     except ValueError as e:

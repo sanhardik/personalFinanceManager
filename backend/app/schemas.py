@@ -7,9 +7,68 @@ Naming convention:
 - *Response: fields returned to the frontend
 """
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+# ── Assets ──────────────────────────────────────────────────
+
+class AssetCreate(BaseModel):
+    """POST /assets — create a new asset."""
+    asset_name: str = Field(..., min_length=1, max_length=200)
+    asset_type: str = Field(
+        default="property", pattern="^(property|equity|stock_portfolio)$"
+    )
+    # Property fields
+    address_street: str | None = Field(default=None, max_length=200)
+    address_suburb: str | None = Field(default=None, max_length=100)
+    address_state: str | None = Field(default=None, max_length=20)
+    address_postcode: str | None = Field(default=None, max_length=10)
+    purchase_price: float | None = None
+    purchase_date: datetime | None = None
+    current_value: float | None = None
+    current_value_at: datetime | None = None
+    is_rental: bool = False
+    rental_income_monthly: float | None = None
+
+
+class AssetUpdate(BaseModel):
+    """PUT /assets/{id} — update an asset."""
+    asset_name: str | None = Field(default=None, min_length=1, max_length=200)
+    asset_type: str | None = Field(
+        default=None, pattern="^(property|equity|stock_portfolio)$"
+    )
+    address_street: str | None = None
+    address_suburb: str | None = None
+    address_state: str | None = None
+    address_postcode: str | None = None
+    purchase_price: float | None = None
+    purchase_date: datetime | None = None
+    current_value: float | None = None
+    current_value_at: datetime | None = None
+    is_rental: bool | None = None
+    rental_income_monthly: float | None = None
+
+
+class AssetResponse(BaseModel):
+    """Asset returned from GET endpoints."""
+    id: int
+    asset_name: str
+    asset_type: str
+    address_street: str | None = None
+    address_suburb: str | None = None
+    address_state: str | None = None
+    address_postcode: str | None = None
+    purchase_price: float | None = None
+    purchase_date: datetime | None = None
+    current_value: float | None = None
+    current_value_at: datetime | None = None
+    is_rental: bool
+    rental_income_monthly: float | None = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ── Categories ──────────────────────────────────────────────
@@ -61,6 +120,16 @@ class AccountCreate(BaseModel):
     )
     bsb: str | None = Field(default=None, max_length=12)
     linked_account_id: int | None = None
+    # Loan fields
+    asset_id: int | None = None
+    loan_original_amount: float | None = None
+    loan_interest_rate: float | None = None
+    loan_start_date: datetime | None = None
+    loan_term_years: int | None = None
+    loan_repayment_type: str | None = Field(
+        default=None, pattern="^(principal_and_interest|interest_only)$"
+    )
+    offset_account_id: int | None = None
 
 
 class AccountUpdate(BaseModel):
@@ -76,6 +145,16 @@ class AccountUpdate(BaseModel):
     is_active: bool | None = None
     current_value: float | None = None
     current_value_at: datetime | None = None
+    # Loan fields
+    asset_id: int | None = None
+    loan_original_amount: float | None = None
+    loan_interest_rate: float | None = None
+    loan_start_date: datetime | None = None
+    loan_term_years: int | None = None
+    loan_repayment_type: str | None = Field(
+        default=None, pattern="^(principal_and_interest|interest_only)$"
+    )
+    offset_account_id: int | None = None
 
 
 class AccountResponse(BaseModel):
@@ -90,6 +169,14 @@ class AccountResponse(BaseModel):
     linked_account_id: int | None
     current_value: float | None = None
     current_value_at: datetime | None = None
+    # Loan fields
+    asset_id: int | None = None
+    loan_original_amount: float | None = None
+    loan_interest_rate: float | None = None
+    loan_start_date: datetime | None = None
+    loan_term_years: int | None = None
+    loan_repayment_type: str | None = None
+    offset_account_id: int | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -173,12 +260,14 @@ class RuleCreate(BaseModel):
     """POST /rules — create a new auto-categorisation rule."""
     pattern: str = Field(..., min_length=1, max_length=500)
     category_id: int
+    transfer_account_id: int | None = None
 
 
 class RuleUpdate(BaseModel):
     """PUT /rules/{id} — update a rule."""
     pattern: str | None = Field(default=None, min_length=1, max_length=500)
     category_id: int | None = None
+    transfer_account_id: int | None = None
     is_active: bool | None = None
 
 
@@ -187,6 +276,7 @@ class RuleResponse(BaseModel):
     id: int
     pattern: str
     category_id: int
+    transfer_account_id: int | None
     category: CategoryResponse
     is_active: bool
     created_at: datetime
@@ -220,12 +310,45 @@ class SuggestedRuleResponse(BaseModel):
     id: int
     pattern: str
     category_id: int
+    transfer_account_id: int | None
     category: CategoryResponse
     hit_count: int
     status: str
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ── Loans ────────────────────────────────────────────────────
+
+class LoanSummaryResponse(BaseModel):
+    """GET /loans/{id}/summary — key metrics for a single loan."""
+    account_id: int
+    account_name: str
+    account_number: str
+    bank_name: str
+    loan_repayment_type: str | None          # "principal_and_interest" | "interest_only" | None
+    loan_interest_rate: float | None         # % p.a.
+    loan_term_years: int | None
+    loan_start_date: datetime | None
+    loan_original_amount: float | None       # From account field (or derived from drawdown tx)
+    current_balance: float | None            # abs(latest balance) — what is still owed
+    total_interest_paid: float               # Sum of all Home Loan Interest transactions
+    total_principal_paid: float              # original_amount - current_balance
+    percent_paid: float | None               # principal_paid / original * 100
+    avg_monthly_payment: float | None        # Average of last 3 months' payments
+    projected_payoff_date: str | None        # ISO date string or None if interest-only / rate not set
+    asset_id: int | None
+    asset: AssetResponse | None
+
+
+class LoanHistoryRow(BaseModel):
+    """One month in a loan's payment history."""
+    month: str                               # "2026-03"
+    payment: float                           # Total credit to loan account
+    interest: float                          # Interest charged
+    principal: float                         # payment - interest
+    balance: float | None                    # End-of-month balance (negative = owed)
 
 
 # ── Upload ───────────────────────────────────────────────────

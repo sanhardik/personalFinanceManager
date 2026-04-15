@@ -36,7 +36,11 @@ class UploadResult:
     errors: list[str]
 
 
-async def process_csv_upload(content: str, db: AsyncSession) -> UploadResult:
+async def process_csv_upload(
+    content: str,
+    db: AsyncSession,
+    account_id_override: int | None = None,
+) -> UploadResult:
     """
     Process a CSV upload end-to-end.
 
@@ -81,13 +85,23 @@ async def process_csv_upload(content: str, db: AsyncSession) -> UploadResult:
     account_map: dict[str, int] = {}  # account_number → account.id
     for tx in result.transactions:
         if tx.account_number not in account_map:
-            account = await _get_or_create_account(
-                db=db,
-                account_number=tx.account_number,
-                bank_name=result.bank_name,
-                account_type=tx.account_type,
-            )
-            account_map[tx.account_number] = account.id
+            if account_id_override:
+                # User explicitly chose an existing account — validate it exists
+                existing = await db.execute(
+                    select(Account).where(Account.id == account_id_override)
+                )
+                if not existing.scalar_one_or_none():
+                    raise ValueError(f"Account ID {account_id_override} not found")
+                account_map[tx.account_number] = account_id_override
+            else:
+                account = await _get_or_create_account(
+                    db=db,
+                    account_number=tx.account_number,
+                    bank_name=result.bank_name,
+                    account_type=tx.account_type,
+                    account_name=tx.account_name,
+                )
+                account_map[tx.account_number] = account.id
 
     # Step 4: Insert transactions (skip duplicates)
     inserted = 0
@@ -157,6 +171,7 @@ async def _get_or_create_account(
     account_number: str,
     bank_name: str,
     account_type: str,
+    account_name: str = "",
 ) -> Account:
     """Find an existing account or create a new one."""
     result = await db.execute(
@@ -167,15 +182,18 @@ async def _get_or_create_account(
     if account:
         return account
 
-    # Auto-generate a name
-    if account_type == "credit_card":
-        name = f"{bank_name} Credit Card ****{account_number}"
+    # Determine display name
+    if account_name:
+        # Use the bank-provided account name (e.g. "Boondall", "Basic Home Loan")
+        display_name = account_name
+    elif account_type == "credit_card":
+        display_name = f"{bank_name} Credit Card ****{account_number}"
     else:
-        name = f"{bank_name} Account {account_number}"
+        display_name = f"{bank_name} Account {account_number}"
 
     account = Account(
         account_number=account_number,
-        account_name=name,
+        account_name=display_name,
         bank_name=bank_name,
         account_type=account_type,
     )
