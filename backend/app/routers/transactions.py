@@ -7,10 +7,11 @@ Routes:
 """
 
 import json
+from collections import defaultdict
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, asc, desc, or_
+from sqlalchemy import select, func, case, asc, desc, or_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -117,6 +118,124 @@ async def list_transactions(
         "per_page": per_page,
         "pages": (total + per_page - 1) // per_page if total > 0 else 0,
     }
+
+
+@router.get("/count")
+async def get_transaction_count(db: AsyncSession = Depends(get_db)):
+    """Return global (all-time) transaction counts: total, categorised, uncategorised."""
+    result = await db.execute(
+        select(
+            func.count(Transaction.id).label("total"),
+            func.sum(case((Transaction.is_categorised == False, 1), else_=0)).label("uncategorised"),
+        )
+    )
+    row = result.one()
+    total = int(row.total or 0)
+    uncategorised = int(row.uncategorised or 0)
+    return {"total": total, "uncategorised": uncategorised, "categorised": total - uncategorised}
+
+
+@router.get("/uncategorised-groups")
+async def get_uncategorised_groups(db: AsyncSession = Depends(get_db)):
+    """
+    Groups uncategorised transactions by extracted merchant pattern.
+    For each group, checks active rules then suggested_rules for a category suggestion.
+    Returns list sorted by count DESC.
+    """
+    # Load all uncategorised transactions
+    tx_result = await db.execute(
+        select(Transaction).where(Transaction.is_categorised == False).order_by(Transaction.tx_date.desc())
+    )
+    transactions = tx_result.scalars().all()
+
+    # Load accounts for name lookup
+    acc_result = await db.execute(select(Account))
+    accounts_map: dict[int, Account] = {a.id: a for a in acc_result.scalars().all()}
+
+    # Group by exact description — identical descriptions are the same payee
+    groups: dict[str, list] = defaultdict(list)
+    for tx in transactions:
+        groups[tx.tx_desc].append(tx)
+
+    # Load active rules and suggested rules for suggestion lookup
+    rules_result = await db.execute(
+        select(Rule).where(Rule.is_active == True)
+    )
+    rules = {r.pattern.lower(): r for r in rules_result.scalars().all()}
+
+    sugg_result = await db.execute(
+        select(SuggestedRule)
+        .where(SuggestedRule.status == "pending")
+        .order_by(desc(SuggestedRule.hit_count))
+    )
+    suggestions_map: dict[str, SuggestedRule] = {}
+    for s in sugg_result.scalars().all():
+        if s.pattern.lower() not in suggestions_map:
+            suggestions_map[s.pattern.lower()] = s
+
+    # Load category names for suggestions
+    cat_ids = set()
+    for r in rules.values():
+        cat_ids.add(r.category_id)
+    for s in suggestions_map.values():
+        cat_ids.add(s.category_id)
+
+    cats = {}
+    if cat_ids:
+        cat_result = await db.execute(select(Category).where(Category.id.in_(cat_ids)))
+        cats = {c.id: c for c in cat_result.scalars().all()}
+
+    # Build response
+    result = []
+    for pattern_key, txs in sorted(groups.items(), key=lambda x: -len(x[1])):
+        suggested_category_id = None
+        suggested_category_name = None
+
+        # Check rules first — find the first active rule whose pattern appears in this description
+        desc_lower = pattern_key.lower()
+        matched_rule = next(
+            (r for pat, r in rules.items() if pat in desc_lower),
+            None,
+        )
+        if matched_rule and matched_rule.category_id in cats:
+            suggested_category_id = matched_rule.category_id
+            suggested_category_name = cats[matched_rule.category_id].name
+        else:
+            # Fall back to suggested rules
+            matched_sugg = next(
+                (s for pat, s in suggestions_map.items() if pat in desc_lower),
+                None,
+            )
+            if matched_sugg and matched_sugg.category_id in cats:
+                suggested_category_id = matched_sugg.category_id
+                suggested_category_name = cats[matched_sugg.category_id].name
+
+        # Build per-transaction detail rows (sorted newest first)
+        tx_rows = []
+        for t in sorted(txs, key=lambda x: x.tx_date, reverse=True):
+            acc = accounts_map.get(t.account_id)
+            acc_name = acc.account_name if acc else f"#{t.account_id}"
+            tx_rows.append({
+                "id": t.id,
+                "tx_date": t.tx_date.strftime("%Y-%m-%d"),
+                "tx_amount": float(t.tx_amount),
+                "tx_type": t.tx_type,
+                "tx_desc": t.tx_desc,
+                "account_name": acc_name,
+            })
+
+        result.append({
+            "description": pattern_key,
+            "count": len(txs),
+            "total_amount": round(sum(abs(t.tx_amount) for t in txs), 2),
+            "transaction_ids": [t.id for t in txs],
+            "dates": sorted(set(t.tx_date.strftime("%Y-%m-%d") for t in txs), reverse=True)[:3],
+            "suggested_category_id": suggested_category_id,
+            "suggested_category_name": suggested_category_name,
+            "transactions": tx_rows,
+        })
+
+    return result
 
 
 @router.patch("/{tx_id}", response_model=TransactionPatchResponse)
