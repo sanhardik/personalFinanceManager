@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import Account, Category, Rule, SuggestedRule, Transaction
 from app.schemas import BulkCategoriseRequest, BulkCategoriseResponse, TransactionPatchResponse, TransactionResponse, TransactionUpdate
+from app.services.categoriser import TRANSFER_CATEGORY_NAMES, _link_counterpart
 from app.services.pattern_extractor import AUTO_PROMOTE_THRESHOLD, extract_merchant_pattern
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
@@ -340,21 +341,41 @@ async def delete_transactions_by_account(
 
 @router.post("/bulk-categorise", response_model=BulkCategoriseResponse)
 async def bulk_categorise(body: BulkCategoriseRequest, db: AsyncSession = Depends(get_db)):
-    """Set the same category on multiple transactions at once."""
+    """Set the same category (and optionally transfer_account_id) on multiple transactions."""
     cat = await db.get(Category, body.category_id)
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
+
+    if body.transfer_account_id is not None:
+        acc = await db.get(Account, body.transfer_account_id)
+        if not acc:
+            raise HTTPException(status_code=404, detail="Transfer account not found")
 
     result = await db.execute(
         select(Transaction).where(Transaction.id.in_(body.transaction_ids))
     )
     transactions = result.scalars().all()
 
+    is_transfer = cat.name in TRANSFER_CATEGORY_NAMES
+
     for tx in transactions:
         tx.category_id = body.category_id
         tx.is_categorised = True
+        if is_transfer and body.transfer_account_id is not None:
+            tx.transfer_account_id = body.transfer_account_id
 
     await db.commit()
+
+    # Bidirectional linking for Transfer transactions
+    if is_transfer and body.transfer_account_id is not None:
+        opp_name = "Transfer In" if cat.name == "Transfer Out" else "Transfer Out"
+        opp_cat_result = await db.execute(select(Category).where(Category.name == opp_name))
+        opp_cat = opp_cat_result.scalar_one_or_none()
+        if opp_cat:
+            for tx in transactions:
+                await _link_counterpart(db, tx, opp_cat.id)
+            await db.commit()
+
     return BulkCategoriseResponse(
         updated=len(transactions),
         category_id=cat.id,
