@@ -1,0 +1,4 @@
+Transaction Date,Details,Account,Category,Subcategory,Tags,Notes,Debit,Credit,Balance,Original Description
+"18 Mar 2026","From Main account","Basic Home Loan","Financial","Transfers","","","","422.86","-92300","from account xx2717"
+"18 Mar 2026","Interest Charged","Basic Home Loan","Financial","Interest","","","422.86","","-92722.86","Interest charged"
+"18 Feb 2025","Loan drawdown","Basic Home Loan","Financial","Other Financials","","","102300","","-102300","Loan drawdown"
