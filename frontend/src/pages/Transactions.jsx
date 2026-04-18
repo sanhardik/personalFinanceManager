@@ -132,7 +132,7 @@ export default function Transactions() {
         const similar = await fetchTransactions({ search: updated.similar_prefix, categorised: false });
         const ids = similar.items.filter(t => t.id !== txId).map(t => t.id);
         if (ids.length > 0) {
-          setSuggestion({ categoryId, categoryName: updated.category_name, prefix: updated.similar_prefix, count: ids.length, ids });
+          setSuggestion({ categoryId, categoryName: updated.category_name, prefix: updated.similar_prefix, count: ids.length, ids, transferAccountId: transferAccountId || null });
         }
       }
     } catch (err) {
@@ -181,17 +181,36 @@ export default function Transactions() {
   const handleApplySuggestion = async () => {
     if (!suggestion) return;
     try {
-      const result = await bulkCategorise(suggestion.ids, suggestion.categoryId);
+      await bulkCategorise(suggestion.ids, suggestion.categoryId, suggestion.transferAccountId || null);
       setTransactions(prev => prev.map(tx =>
         suggestion.ids.includes(tx.id)
           ? { ...tx, category_id: suggestion.categoryId, category_name: suggestion.categoryName, is_categorised: true }
           : tx
       ));
       setSuggestion(null);
-      // Show a brief success note via pagination total reload
       await loadTransactions(pagination.page);
     } catch (err) {
       console.error('Bulk categorise failed:', err);
+    }
+  };
+
+  const handleCreateRuleAndApplyAll = async () => {
+    if (!suggestion) return;
+    try {
+      if (ruleSuggestion) {
+        await acceptSuggestion(ruleSuggestion.suggestion_id);
+        setRuleSuggestion(null);
+      }
+      await bulkCategorise(suggestion.ids, suggestion.categoryId, suggestion.transferAccountId || null);
+      setTransactions(prev => prev.map(tx =>
+        suggestion.ids.includes(tx.id)
+          ? { ...tx, category_id: suggestion.categoryId, category_name: suggestion.categoryName, is_categorised: true }
+          : tx
+      ));
+      setSuggestion(null);
+      await loadTransactions(pagination.page);
+    } catch (err) {
+      console.error('Create rule and apply all failed:', err);
     }
   };
 
@@ -334,14 +353,23 @@ export default function Transactions() {
             </span>
           </div>
           <div className="flex gap-2 flex-shrink-0">
+            {ruleSuggestion && !ruleSuggestion.auto_promoted && (
+              <button
+                onClick={handleCreateRuleAndApplyAll}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-xs font-medium rounded-lg hover:bg-violet-700 transition-colors"
+              >
+                <Sparkles size={12} />
+                Create rule &amp; apply all
+              </button>
+            )}
             <button
               onClick={handleApplySuggestion}
               className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
             >
-              Yes, apply all
+              Apply all
             </button>
             <button
-              onClick={() => setSuggestion(null)}
+              onClick={() => { setSuggestion(null); }}
               className="p-1.5 text-blue-400 hover:text-blue-600"
             >
               <X size={14} />

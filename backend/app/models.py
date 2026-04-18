@@ -261,6 +261,9 @@ class Rule(Base):
 
     # Relationships
     category: Mapped["Category"] = relationship(back_populates="rules")
+    transfer_account: Mapped["Account | None"] = relationship(
+        "Account", foreign_keys=[transfer_account_id]
+    )
 
     def __repr__(self) -> str:
         return f"<Rule '{self.pattern}' → category_id={self.category_id}>"

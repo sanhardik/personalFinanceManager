@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Wand2, Plus, Trash2, Edit2, X, Check, Loader2, Play, Search, AlertTriangle, ArrowRight, Sparkles, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { fetchRules, createRule, updateRule, deleteRule, applyRules, fetchAffected, recategoriseByRule, fetchSuggestions, acceptSuggestion, dismissSuggestion } from '../api/rules';
 import { fetchCategories } from '../api/categories';
+import { fetchAccounts } from '../api/accounts';
 import { CategoryOptions } from '../utils/categoryGroups.jsx';
 import { SortableHeader } from '../components/SortableHeader';
 import { useSortable } from '../hooks/useSortable';
@@ -12,6 +13,7 @@ const formatDate = (d) => new Date(d).toLocaleDateString('en-AU', { day: '2-digi
 export default function Rules() {
   const [rules, setRules] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [accounts, setAccounts] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -20,11 +22,14 @@ export default function Rules() {
   const [search, setSearch] = useState('');
   const [acceptingId, setAcceptingId] = useState(null);
   const [dismissingId, setDismissingId] = useState(null);
+  const [runningId, setRunningId] = useState(null);
+  const [runResult, setRunResult] = useState(null); // { ruleId, updated, category_name }
 
   // Create form
   const [showForm, setShowForm] = useState(false);
   const [formPattern, setFormPattern] = useState('');
   const [formCategoryId, setFormCategoryId] = useState('');
+  const [formTransferAccountId, setFormTransferAccountId] = useState('');
   const [formSubmitting, setFormSubmitting] = useState(false);
 
   // Edit state
@@ -32,6 +37,7 @@ export default function Rules() {
   const [editPattern, setEditPattern] = useState('');
   const [editCategoryId, setEditCategoryId] = useState('');
   const [editOriginalCategoryId, setEditOriginalCategoryId] = useState('');
+  const [editTransferAccountId, setEditTransferAccountId] = useState('');
   const [editActive, setEditActive] = useState(true);
 
   // Recategorise confirmation panel
@@ -46,10 +52,11 @@ export default function Rules() {
     try {
       setLoading(true);
       setError(null);
-      const [r, c, s] = await Promise.all([fetchRules(), fetchCategories(), fetchSuggestions()]);
+      const [r, c, s, a] = await Promise.all([fetchRules(), fetchCategories(), fetchSuggestions(), fetchAccounts()]);
       setRules(r);
       setCategories(c);
       setSuggestions(s);
+      setAccounts(a);
       if (!formCategoryId && c.length > 0) setFormCategoryId(String(c[0].id));
     } catch {
       setError('Failed to load rules.');
@@ -62,14 +69,29 @@ export default function Rules() {
 
   const getCategoryColour = (id) => categories.find(c => c.id === id)?.colour || '#94a3b8';
   const getCategoryName = (id) => categories.find(c => c.id === id)?.name || `#${id}`;
+  const accountLabel = (a) => {
+    const last4 = a.account_number?.slice(-4);
+    return last4 ? `${a.account_name} (****${last4})` : a.account_name || a.account_number;
+  };
+  const isTransferCategory = (categoryId) => {
+    const name = categories.find(c => c.id === parseInt(categoryId))?.name || '';
+    return name === 'Transfer In' || name === 'Transfer Out';
+  };
 
   const handleCreate = async (e) => {
     e.preventDefault();
     if (!formPattern.trim() || !formCategoryId) return;
     try {
       setFormSubmitting(true);
-      await createRule({ pattern: formPattern.trim(), category_id: parseInt(formCategoryId) });
+      await createRule({
+        pattern: formPattern.trim(),
+        category_id: parseInt(formCategoryId),
+        transfer_account_id: (isTransferCategory(formCategoryId) && formTransferAccountId)
+          ? parseInt(formTransferAccountId)
+          : null,
+      });
       setFormPattern('');
+      setFormTransferAccountId('');
       setShowForm(false);
       await load();
     } catch (err) {
@@ -84,6 +106,7 @@ export default function Rules() {
     setEditPattern(rule.pattern);
     setEditCategoryId(String(rule.category_id));
     setEditOriginalCategoryId(String(rule.category_id));
+    setEditTransferAccountId(rule.transfer_account_id ? String(rule.transfer_account_id) : '');
     setEditActive(rule.is_active);
     setConfirmation(null);
   };
@@ -123,6 +146,9 @@ export default function Rules() {
         pattern: editPattern.trim(),
         category_id: parseInt(editCategoryId),
         is_active: editActive,
+        transfer_account_id: (isTransferCategory(editCategoryId) && editTransferAccountId)
+          ? parseInt(editTransferAccountId)
+          : null,
       });
       if (alsoRecategorise) {
         setRecategorising(true);
@@ -158,6 +184,19 @@ export default function Rules() {
       setError('Failed to apply rules');
     } finally {
       setApplying(false);
+    }
+  };
+
+  const handleRunRule = async (ruleId) => {
+    try {
+      setRunningId(ruleId);
+      setRunResult(null);
+      const result = await recategoriseByRule(ruleId);
+      setRunResult({ ruleId, ...result });
+    } catch {
+      setError('Failed to run rule');
+    } finally {
+      setRunningId(null);
     }
   };
 
@@ -234,6 +273,17 @@ export default function Rules() {
         <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm flex justify-between items-center">
           <span>{applyResult.categorised} transaction{applyResult.categorised !== 1 ? 's' : ''} categorised</span>
           <button onClick={() => setApplyResult(null)}><X size={16} /></button>
+        </div>
+      )}
+
+      {/* Single-rule run result */}
+      {runResult && (
+        <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm flex justify-between items-center">
+          <span>
+            Rule ran: <strong>{runResult.updated}</strong> transaction{runResult.updated !== 1 ? 's' : ''} updated
+            {runResult.updated === 0 ? ' (no changes needed)' : ''}
+          </span>
+          <button onClick={() => setRunResult(null)}><X size={16} /></button>
         </div>
       )}
 
@@ -389,11 +439,23 @@ export default function Rules() {
           </div>
           <div className="w-48">
             <label className="block text-xs font-medium text-gray-500 mb-1">Category</label>
-            <select value={formCategoryId} onChange={e => setFormCategoryId(e.target.value)}
+            <select value={formCategoryId} onChange={e => { setFormCategoryId(e.target.value); setFormTransferAccountId(''); }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
               <CategoryOptions categories={categories} />
             </select>
           </div>
+          {isTransferCategory(formCategoryId) && (
+            <div className="w-52">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Linked account</label>
+              <select value={formTransferAccountId} onChange={e => setFormTransferAccountId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">— which account? —</option>
+                {accounts.map(a => (
+                  <option key={a.id} value={a.id}>{accountLabel(a)}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <button type="submit" disabled={formSubmitting || !formPattern.trim()}
             className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
             {formSubmitting ? <Loader2 size={16} className="animate-spin" /> : 'Add'}
@@ -431,6 +493,7 @@ export default function Rules() {
               <tr className="border-b border-gray-100 bg-gray-50">
                 <SortableHeader label="Pattern" column="pattern" sort={sort} onSort={onSort} />
                 <SortableHeader label="Category" column="category" sort={sort} onSort={onSort} />
+                <th className="text-left px-4 py-3 font-medium text-gray-500">Transfer Account</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Status</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-500">Actions</th>
               </tr>
@@ -449,7 +512,7 @@ export default function Rules() {
                   </td>
                   <td className="px-4 py-3">
                     {editingId === rule.id ? (
-                      <select value={editCategoryId} onChange={e => setEditCategoryId(e.target.value)}
+                      <select value={editCategoryId} onChange={e => { setEditCategoryId(e.target.value); setEditTransferAccountId(''); }}
                         className="px-2 py-1 border border-gray-300 rounded text-sm">
                         <CategoryOptions categories={categories} />
                       </select>
@@ -458,6 +521,25 @@ export default function Rules() {
                         <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: getCategoryColour(rule.category_id) }} />
                         <span className="text-gray-700">{getCategoryName(rule.category_id)}</span>
                       </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {editingId === rule.id ? (
+                      isTransferCategory(editCategoryId) ? (
+                        <select value={editTransferAccountId} onChange={e => setEditTransferAccountId(e.target.value)}
+                          className="px-2 py-1 border border-gray-300 rounded text-sm w-44">
+                          <option value="">— which account? —</option>
+                          {accounts.map(a => (
+                            <option key={a.id} value={a.id}>{accountLabel(a)}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-xs text-gray-400">—</span>
+                      )
+                    ) : (
+                      rule.transfer_account_name
+                        ? <span className="text-xs text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full">{rule.transfer_account_name}</span>
+                        : <span className="text-xs text-gray-300">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -485,6 +567,10 @@ export default function Rules() {
                       </div>
                     ) : (
                       <div className="flex justify-end gap-1">
+                        <button onClick={() => handleRunRule(rule.id)} disabled={runningId === rule.id || !rule.is_active}
+                          className="p-1.5 text-gray-400 hover:bg-green-50 rounded hover:text-green-600 disabled:opacity-30" title="Run this rule">
+                          {runningId === rule.id ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                        </button>
                         <button onClick={() => startEdit(rule)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded hover:text-blue-600" title="Edit">
                           <Edit2 size={14} />
                         </button>
