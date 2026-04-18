@@ -67,6 +67,10 @@ export default function Rules() {
 
   const getCategoryColour = (id) => categories.find(c => c.id === id)?.colour || '#94a3b8';
   const getCategoryName = (id) => categories.find(c => c.id === id)?.name || `#${id}`;
+  const accountLabel = (a) => {
+    const last4 = a.account_number?.slice(-4);
+    return last4 ? `${a.account_name} (****${last4})` : a.account_name || a.account_number;
+  };
   const isTransferCategory = (categoryId) => {
     const name = categories.find(c => c.id === parseInt(categoryId))?.name || '';
     return name === 'Transfer In' || name === 'Transfer Out';
@@ -419,11 +423,9 @@ export default function Rules() {
               <label className="block text-xs font-medium text-gray-500 mb-1">Linked account</label>
               <select value={formTransferAccountId} onChange={e => setFormTransferAccountId(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">— select account —</option>
+                <option value="">— which account? —</option>
                 {accounts.map(a => (
-                  <option key={a.id} value={a.id}>
-                    {a.account_name || a.account_number} ({a.bank_name})
-                  </option>
+                  <option key={a.id} value={a.id}>{accountLabel(a)}</option>
                 ))}
               </select>
             </div>
@@ -500,11 +502,9 @@ export default function Rules() {
                       isTransferCategory(editCategoryId) ? (
                         <select value={editTransferAccountId} onChange={e => setEditTransferAccountId(e.target.value)}
                           className="px-2 py-1 border border-gray-300 rounded text-sm w-44">
-                          <option value="">— none —</option>
+                          <option value="">— which account? —</option>
                           {accounts.map(a => (
-                            <option key={a.id} value={a.id}>
-                              {a.account_name || a.account_number} ({a.bank_name})
-                            </option>
+                            <option key={a.id} value={a.id}>{accountLabel(a)}</option>
                           ))}
                         </select>
                       ) : (
