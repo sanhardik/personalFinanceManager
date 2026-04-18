@@ -22,6 +22,8 @@ export default function Rules() {
   const [search, setSearch] = useState('');
   const [acceptingId, setAcceptingId] = useState(null);
   const [dismissingId, setDismissingId] = useState(null);
+  const [runningId, setRunningId] = useState(null);
+  const [runResult, setRunResult] = useState(null); // { ruleId, updated, category_name }
 
   // Create form
   const [showForm, setShowForm] = useState(false);
@@ -185,6 +187,19 @@ export default function Rules() {
     }
   };
 
+  const handleRunRule = async (ruleId) => {
+    try {
+      setRunningId(ruleId);
+      setRunResult(null);
+      const result = await recategoriseByRule(ruleId);
+      setRunResult({ ruleId, ...result });
+    } catch {
+      setError('Failed to run rule');
+    } finally {
+      setRunningId(null);
+    }
+  };
+
   const handleAcceptSuggestion = async (id) => {
     try {
       setAcceptingId(id);
@@ -258,6 +273,17 @@ export default function Rules() {
         <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm flex justify-between items-center">
           <span>{applyResult.categorised} transaction{applyResult.categorised !== 1 ? 's' : ''} categorised</span>
           <button onClick={() => setApplyResult(null)}><X size={16} /></button>
+        </div>
+      )}
+
+      {/* Single-rule run result */}
+      {runResult && (
+        <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm flex justify-between items-center">
+          <span>
+            Rule ran: <strong>{runResult.updated}</strong> transaction{runResult.updated !== 1 ? 's' : ''} updated
+            {runResult.updated === 0 ? ' (no changes needed)' : ''}
+          </span>
+          <button onClick={() => setRunResult(null)}><X size={16} /></button>
         </div>
       )}
 
@@ -541,6 +567,10 @@ export default function Rules() {
                       </div>
                     ) : (
                       <div className="flex justify-end gap-1">
+                        <button onClick={() => handleRunRule(rule.id)} disabled={runningId === rule.id || !rule.is_active}
+                          className="p-1.5 text-gray-400 hover:bg-green-50 rounded hover:text-green-600 disabled:opacity-30" title="Run this rule">
+                          {runningId === rule.id ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                        </button>
                         <button onClick={() => startEdit(rule)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded hover:text-blue-600" title="Edit">
                           <Edit2 size={14} />
                         </button>
