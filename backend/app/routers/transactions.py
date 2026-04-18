@@ -7,6 +7,7 @@ Routes:
 """
 
 import json
+from collections import defaultdict
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -147,13 +148,10 @@ async def get_uncategorised_groups(db: AsyncSession = Depends(get_db)):
     )
     transactions = tx_result.scalars().all()
 
-    # Group by merchant pattern (extract_merchant_pattern reused from PATCH logic)
-    from collections import defaultdict
+    # Group by exact description — identical descriptions are the same payee
     groups: dict[str, list] = defaultdict(list)
     for tx in transactions:
-        pattern = extract_merchant_pattern(tx.tx_desc)
-        key = pattern if pattern else tx.tx_desc[:40].strip()
-        groups[key].append(tx)
+        groups[tx.tx_desc].append(tx)
 
     # Load active rules and suggested rules for suggestion lookup
     rules_result = await db.execute(
@@ -189,17 +187,24 @@ async def get_uncategorised_groups(db: AsyncSession = Depends(get_db)):
         suggested_category_id = None
         suggested_category_name = None
 
-        # Check rules first
-        rule = rules.get(pattern_key.lower())
-        if rule and rule.category_id in cats:
-            suggested_category_id = rule.category_id
-            suggested_category_name = cats[rule.category_id].name
+        # Check rules first — find the first active rule whose pattern appears in this description
+        desc_lower = pattern_key.lower()
+        matched_rule = next(
+            (r for pat, r in rules.items() if pat in desc_lower),
+            None,
+        )
+        if matched_rule and matched_rule.category_id in cats:
+            suggested_category_id = matched_rule.category_id
+            suggested_category_name = cats[matched_rule.category_id].name
         else:
             # Fall back to suggested rules
-            sugg = suggestions_map.get(pattern_key.lower())
-            if sugg and sugg.category_id in cats:
-                suggested_category_id = sugg.category_id
-                suggested_category_name = cats[sugg.category_id].name
+            matched_sugg = next(
+                (s for pat, s in suggestions_map.items() if pat in desc_lower),
+                None,
+            )
+            if matched_sugg and matched_sugg.category_id in cats:
+                suggested_category_id = matched_sugg.category_id
+                suggested_category_name = cats[matched_sugg.category_id].name
 
         result.append({
             "description": pattern_key,

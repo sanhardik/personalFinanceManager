@@ -26,6 +26,8 @@ export default function Transactions() {
   // categoryFilter: '' = all, 'uncategorised' = uncategorised only, number = specific category id
   const [categoryFilter, setCategoryFilter] = useState('');
 
+  const { open } = useCategoriseDrawer();
+
   // Sort state
   const { sort, onSort: _onSort } = useSortable('tx_date', 'desc');
   const [userSorted, setUserSorted] = useState(false);
@@ -260,12 +262,8 @@ export default function Transactions() {
         <span className="text-sm text-gray-400 ml-2">{pagination.total} total</span>
         {stats?.uncategorised > 0 && (
           <button
-            onClick={() => setCategoryFilter(categoryFilter === 'uncategorised' ? '' : 'uncategorised')}
-            className={`ml-2 text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
-              categoryFilter === 'uncategorised'
-                ? 'bg-orange-500 text-white'
-                : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
-            }`}
+            onClick={open}
+            className="ml-2 text-xs font-medium px-2.5 py-1 rounded-full bg-orange-100 text-orange-700 hover:bg-orange-200 transition-colors"
           >
             {stats.uncategorised} uncategorised
           </button>
