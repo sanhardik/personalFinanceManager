@@ -22,6 +22,8 @@ import {
   Home,
   Building2,
 } from 'lucide-react';
+import { useTransactionStats } from '../../contexts/TransactionStatsContext';
+import { useCategoriseDrawer } from '../../contexts/CategoriseDrawerContext';
 
 /**
  * Navigation items configuration.
@@ -42,6 +44,9 @@ const navItems = [
 ];
 
 export default function Sidebar() {
+  const { stats } = useTransactionStats();
+  const { open } = useCategoriseDrawer();
+
   return (
     <aside className="w-60 bg-white border-r border-gray-200 min-h-screen flex flex-col">
       {/* App logo and title */}
@@ -59,6 +64,7 @@ export default function Sidebar() {
             <li key={to}>
               <NavLink
                 to={to}
+                end={to === '/'}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                     isActive
@@ -69,6 +75,14 @@ export default function Sidebar() {
               >
                 <Icon size={18} />
                 {label}
+                {to === '/transactions' && stats?.uncategorised > 0 && (
+                  <button
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); open(); }}
+                    className="ml-auto text-xs bg-orange-100 text-orange-700 font-medium px-1.5 py-0.5 rounded-full hover:bg-orange-200 transition-colors"
+                  >
+                    {stats.uncategorised}
+                  </button>
+                )}
               </NavLink>
             </li>
           ))}

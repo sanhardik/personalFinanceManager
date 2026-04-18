@@ -10,6 +10,9 @@
 
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout/Layout';
+import { TransactionStatsProvider } from './contexts/TransactionStatsContext';
+import { CategoriseDrawerProvider } from './contexts/CategoriseDrawerContext';
+import { CategoriseDrawer } from './components/CategoriseDrawer';
 import Accounts from './pages/Accounts';
 import Dashboard from './pages/Dashboard';
 import Transactions from './pages/Transactions';
@@ -23,6 +26,8 @@ import SettingsPage from './pages/SettingsPage';
 
 function App() {
   return (
+    <TransactionStatsProvider>
+    <CategoriseDrawerProvider>
     <BrowserRouter>
       <Routes>
         {/* All pages share the Layout (sidebar + header) */}
@@ -39,7 +44,10 @@ function App() {
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Routes>
+      <CategoriseDrawer />
     </BrowserRouter>
+    </CategoriseDrawerProvider>
+    </TransactionStatsProvider>
   );
 }
 
