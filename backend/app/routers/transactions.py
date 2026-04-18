@@ -148,6 +148,10 @@ async def get_uncategorised_groups(db: AsyncSession = Depends(get_db)):
     )
     transactions = tx_result.scalars().all()
 
+    # Load accounts for name lookup
+    acc_result = await db.execute(select(Account))
+    accounts_map: dict[int, Account] = {a.id: a for a in acc_result.scalars().all()}
+
     # Group by exact description — identical descriptions are the same payee
     groups: dict[str, list] = defaultdict(list)
     for tx in transactions:
@@ -206,6 +210,20 @@ async def get_uncategorised_groups(db: AsyncSession = Depends(get_db)):
                 suggested_category_id = matched_sugg.category_id
                 suggested_category_name = cats[matched_sugg.category_id].name
 
+        # Build per-transaction detail rows (sorted newest first)
+        tx_rows = []
+        for t in sorted(txs, key=lambda x: x.tx_date, reverse=True):
+            acc = accounts_map.get(t.account_id)
+            acc_name = acc.account_name if acc else f"#{t.account_id}"
+            tx_rows.append({
+                "id": t.id,
+                "tx_date": t.tx_date.strftime("%Y-%m-%d"),
+                "tx_amount": float(t.tx_amount),
+                "tx_type": t.tx_type,
+                "tx_desc": t.tx_desc,
+                "account_name": acc_name,
+            })
+
         result.append({
             "description": pattern_key,
             "count": len(txs),
@@ -214,6 +232,7 @@ async def get_uncategorised_groups(db: AsyncSession = Depends(get_db)):
             "dates": sorted(set(t.tx_date.strftime("%Y-%m-%d") for t in txs), reverse=True)[:3],
             "suggested_category_id": suggested_category_id,
             "suggested_category_name": suggested_category_name,
+            "transactions": tx_rows,
         })
 
     return result
