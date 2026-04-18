@@ -1,0 +1,7 @@
+Transaction Date,Details,Account,Category,Subcategory,Tags,Notes,Debit,Credit,Balance,Original Description
+"18 Mar 2026","From Investment Account","Boondall","Financial","Transfers","","","","2695.34","-455621.68","from account xx2733"
+"18 Mar 2026","Interest Charged","Boondall","Financial","Interest","","","2020.46","","-458317.02","Interest charged"
+"18 Feb 2026","From Investment Account","Boondall","Financial","Transfers","","","","2695.34","-456296.56","from account xx2733"
+"18 Feb 2026","Interest Charged","Boondall","Financial","Interest","","","2269.68","","-459083.44","Interest charged"
+"18 Feb 2025","Documentation Fee","Boondall","Fees","Other Fees","","","350","","-472400","Documentation fee"
+"18 Feb 2025","Loan drawdown","Boondall","Financial","Other Financials","","","472050","","-472050","Loan drawdown"
