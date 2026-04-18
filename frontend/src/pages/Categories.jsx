@@ -254,12 +254,14 @@ export default function Categories() {
               <button onClick={() => startEdit(cat)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded hover:text-blue-600" title="Edit">
                 <Edit2 size={14} />
               </button>
-              {!cat.is_system && (
-                <button onClick={() => handleDelete(cat.id, cat.name, cat.is_system, hasChildren)}
-                  className="p-1.5 text-gray-400 hover:bg-red-50 rounded hover:text-red-600" title="Delete">
-                  <Trash2 size={14} />
-                </button>
-              )}
+              <button
+                onClick={() => handleDelete(cat.id, cat.name, cat.is_system, hasChildren)}
+                disabled={cat.is_system}
+                className={`p-1.5 rounded ${cat.is_system ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:bg-red-50 hover:text-red-600'}`}
+                title={cat.is_system ? 'System categories cannot be deleted' : 'Delete'}
+              >
+                <Trash2 size={14} />
+              </button>
             </div>
           )}
         </td>

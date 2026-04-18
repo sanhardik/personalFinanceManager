@@ -301,7 +301,7 @@ class SuggestedRule(Base):
         Text, nullable=True
     )  # JSON list of tx IDs that triggered this suggestion
     promoted_rule_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("rules.id"), nullable=True
+        Integer, ForeignKey("rules.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False

@@ -136,6 +136,34 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Migration: transfer_account_id on rules failed (non-fatal): %s", e)
 
+    # Schema migration — fix suggested_rules.promoted_rule_id FK to ON DELETE SET NULL
+    try:
+        async with engine.begin() as conn:
+            # Check current DELETE_RULE for the FK on promoted_rule_id
+            result = await conn.execute(text(
+                "SELECT rc.CONSTRAINT_NAME, rc.DELETE_RULE "
+                "FROM information_schema.REFERENTIAL_CONSTRAINTS rc "
+                "JOIN information_schema.KEY_COLUMN_USAGE kcu "
+                "  ON rc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME "
+                "  AND rc.CONSTRAINT_SCHEMA = kcu.TABLE_SCHEMA "
+                "WHERE kcu.TABLE_SCHEMA = DATABASE() "
+                "AND kcu.TABLE_NAME = 'suggested_rules' "
+                "AND kcu.COLUMN_NAME = 'promoted_rule_id'"
+            ))
+            row = result.fetchone()
+            if row and row[1] != "SET NULL":
+                fk_name = row[0]
+                await conn.execute(text(
+                    f"ALTER TABLE suggested_rules DROP FOREIGN KEY `{fk_name}`"
+                ))
+                await conn.execute(text(
+                    "ALTER TABLE suggested_rules ADD CONSTRAINT `fk_suggested_rules_promoted_rule` "
+                    "FOREIGN KEY (promoted_rule_id) REFERENCES rules(id) ON DELETE SET NULL"
+                ))
+                logger.info("Migration: fixed promoted_rule_id FK to ON DELETE SET NULL")
+    except Exception as e:
+        logger.warning("Migration: promoted_rule_id FK fix failed (non-fatal): %s", e)
+
     # Seed default categories + rules (idempotent — skips existing)
     try:
         async with async_session_factory() as session:
