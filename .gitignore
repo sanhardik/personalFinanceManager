@@ -20,6 +20,10 @@ logs/
 # Environment (keep .env.test — it has no real secrets)
 backend/.env
 
+# SQLite database files
+backend/data/
+*.db
+
 # Old dev artifacts
 .backend.log
 .frontend.log
