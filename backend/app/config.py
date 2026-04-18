@@ -6,7 +6,13 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """App settings — reads from .env file or environment variables."""
 
-    # Database
+    # Database type: "mariadb" | "sqlite"
+    DB_TYPE: str = "mariadb"
+
+    # SQLite (used when DB_TYPE=sqlite)
+    SQLITE_PATH: str = "data/finance.db"
+
+    # MariaDB (used when DB_TYPE=mariadb)
     DB_HOST: str = "localhost"
     DB_PORT: int = 3306
     DB_USER: str = "finance_user"
@@ -22,8 +28,14 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:5173"
 
     @property
+    def is_sqlite(self) -> bool:
+        return self.DB_TYPE.lower() == "sqlite"
+
+    @property
     def database_url(self) -> str:
         """Async database URL for SQLAlchemy."""
+        if self.is_sqlite:
+            return f"sqlite+aiosqlite:///{self.SQLITE_PATH}"
         return (
             f"mysql+aiomysql://{self.DB_USER}:{self.DB_PASSWORD}"
             f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"

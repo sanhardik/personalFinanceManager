@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Category, Transaction
+from app.utils.db_compat import month_col
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -72,10 +73,10 @@ async def get_monthly(
     db: AsyncSession = Depends(get_db),
 ):
     """Month-by-month income, expenses and savings for the period."""
-    month_col = func.date_format(Transaction.tx_date, "%Y-%m")
+    month_expr = month_col(Transaction.tx_date)
     result = await db.execute(
         select(
-            month_col.label("month"),
+            month_expr.label("month"),
             func.coalesce(
                 func.sum(case((Transaction.tx_type == "Income", Transaction.tx_amount), else_=0)), 0
             ).label("income"),
@@ -84,8 +85,8 @@ async def get_monthly(
             ).label("expenses"),
         )
         .where(*_base_filters(date_from, date_to))
-        .group_by(month_col)
-        .order_by(month_col)
+        .group_by(month_expr)
+        .order_by(month_expr)
     )
     rows = result.all()
     return [

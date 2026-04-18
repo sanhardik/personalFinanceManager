@@ -14,9 +14,10 @@
 import axios from 'axios';
 
 // Create a shared Axios instance with default config.
-// baseURL '/api' is rewritten by Vite's proxy (see vite.config.js).
+// In dev, VITE_API_BASE_URL is unset → uses '/api' → Vite proxy strips it.
+// In production builds (VITE_API_BASE_URL=''), calls go to the same origin.
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: import.meta.env.VITE_API_BASE_URL ?? '/api',
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',

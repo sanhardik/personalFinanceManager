@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Account, Asset, Category, Transaction
+from app.utils.db_compat import month_col
 from app.schemas import AssetResponse, LoanHistoryRow, LoanSummaryResponse
 
 router = APIRouter(prefix="/loans", tags=["loans"])
@@ -129,16 +130,17 @@ async def _loan_summary(loan: Account, db: AsyncSession) -> LoanSummaryResponse:
     # average the last 3 *complete* months (exclude the current partial month).
     # Using recent complete months avoids skew from old lump-sum or extra payments.
     first_of_this_month = datetime.today().replace(day=1).date()
+    month_expr = month_col(Transaction.tx_date)
     recent_monthly = await db.execute(
         select(
-            func.date_format(Transaction.tx_date, "%Y-%m").label("month"),
+            month_expr.label("month"),
             func.sum(Transaction.tx_amount).label("total"),
         )
         .where(Transaction.account_id == loan.id)
         .where(Transaction.tx_type == "Income")
         .where(Transaction.tx_date < first_of_this_month)
-        .group_by(func.date_format(Transaction.tx_date, "%Y-%m"))
-        .order_by(func.date_format(Transaction.tx_date, "%Y-%m").desc())
+        .group_by(month_expr)
+        .order_by(month_expr.desc())
         .limit(3)
     )
     monthly_payment_totals = [float(r.total) for r in recent_monthly.all()]

@@ -1,30 +1,55 @@
 """
-Async SQLAlchemy database setup for MariaDB via aiomysql.
+Async SQLAlchemy database setup — supports MariaDB and SQLite.
 
 This module provides:
-- An async SQLAlchemy engine connected to MariaDB
+- An async SQLAlchemy engine (MariaDB via aiomysql, or SQLite via aiosqlite)
 - A session factory for creating async DB sessions
 - FastAPI dependency (get_db) for injecting sessions into routes
 - Utility functions for health checks, table creation, and cleanup
-
-Connection string is built from settings in app/config.py.
 """
+
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import text
+from sqlalchemy import event, text
+from sqlalchemy.pool import NullPool
 
 from app.config import settings
 
-# Async engine — manages a connection pool to MariaDB.
-# pool_recycle=3600 prevents stale connections after MariaDB's wait_timeout.
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.DEBUG,       # Log SQL queries when DEBUG=True
-    pool_size=10,              # Max persistent connections in the pool
-    max_overflow=20,           # Additional connections allowed beyond pool_size
-    pool_recycle=3600,         # Recycle connections after 1 hour
-)
+
+def _create_engine():
+    if settings.is_sqlite:
+        # Ensure the parent directory exists before SQLite creates the file
+        db_path = Path(settings.SQLITE_PATH)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+
+        eng = create_async_engine(
+            settings.database_url,
+            echo=settings.DEBUG,
+            poolclass=NullPool,
+        )
+
+        # Enable foreign key enforcement per connection (SQLite default is off)
+        @event.listens_for(eng.sync_engine, "connect")
+        def set_sqlite_pragma(dbapi_conn, _connection_record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
+        return eng
+    else:
+        return create_async_engine(
+            settings.database_url,
+            echo=settings.DEBUG,
+            pool_size=10,
+            max_overflow=20,
+            pool_recycle=3600,
+        )
+
+
+# Async engine — manages DB connections (MariaDB pool or SQLite NullPool)
+engine = _create_engine()
 
 # Session factory — creates new AsyncSession instances.
 # expire_on_commit=False keeps objects usable after commit without re-querying.
