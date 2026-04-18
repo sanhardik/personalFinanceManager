@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import Account, Category, Rule, SuggestedRule, Transaction
 from app.schemas import AffectedTransaction, RuleAffectedResponse, RuleCreate, RuleResponse, RuleUpdate, SuggestedRuleResponse
-from app.services.categoriser import apply_rules_to_transactions
+from app.services.categoriser import TRANSFER_CATEGORY_NAMES, _extract_account_suffixes, _link_counterpart, _match_account, apply_rules_to_transactions
 
 router = APIRouter(prefix="/rules", tags=["rules"])
 
@@ -236,9 +236,13 @@ async def get_affected_transactions(rule_id: int, db: AsyncSession = Depends(get
 @router.post("/{rule_id}/recategorise")
 async def recategorise_by_rule(rule_id: int, db: AsyncSession = Depends(get_db)):
     """
-    Re-apply this rule's current category to ALL matching transactions,
-    regardless of their current category. Call after PUT /rules/{id} to
-    propagate a category change to existing transactions.
+    Re-apply this rule's current category (and transfer_account_id) to ALL
+    matching transactions, regardless of their current category or categorised
+    state. Call after PUT /rules/{id} to propagate changes to existing transactions.
+
+    For Transfer In/Out rules:
+    - Sets transfer_account_id from the rule if present, else extracts from description.
+    - Runs bidirectional counterpart linking after commit.
     """
     result = await db.execute(
         select(Rule).options(selectinload(Rule.category)).where(Rule.id == rule_id)
@@ -252,14 +256,64 @@ async def recategorise_by_rule(rule_id: int, db: AsyncSession = Depends(get_db))
     )
     transactions = tx_result.scalars().all()
 
+    # Determine if this is a Transfer category
+    is_transfer = rule.category.name in TRANSFER_CATEGORY_NAMES
+
+    # Load accounts once if we need transfer account resolution
+    accounts: list[Account] = []
+    transfer_cat_ids: dict[str, int] = {}
+    if is_transfer:
+        acc_result = await db.execute(select(Account))
+        accounts = acc_result.scalars().all()
+        cat_result = await db.execute(
+            select(Category).where(Category.name.in_(TRANSFER_CATEGORY_NAMES))
+        )
+        for cat in cat_result.scalars().all():
+            transfer_cat_ids[cat.name] = cat.id
+
     updated = 0
+    transfer_txs: list[Transaction] = []
+
     for tx in transactions:
+        changed = False
+
         if tx.category_id != rule.category_id:
             tx.category_id = rule.category_id
+            tx.is_categorised = True
+            changed = True
+
+        if is_transfer:
+            # Resolve transfer_account_id: rule value → description extraction → keep existing
+            new_transfer_id: int | None = tx.transfer_account_id
+            if rule.transfer_account_id:
+                new_transfer_id = rule.transfer_account_id
+            elif not tx.transfer_account_id and accounts:
+                suffixes = _extract_account_suffixes(tx.tx_desc)
+                matched_id = _match_account(suffixes, accounts, tx.account_id)
+                if matched_id:
+                    new_transfer_id = matched_id
+
+            if new_transfer_id != tx.transfer_account_id:
+                tx.transfer_account_id = new_transfer_id
+                changed = True
+
+            if tx.transfer_account_id:
+                transfer_txs.append(tx)
+
+        if changed:
             tx.is_categorised = True
             updated += 1
 
     if updated:
+        await db.commit()
+
+        # Bidirectional linking for Transfer transactions
+        for tx in transfer_txs:
+            opp_name = "Transfer In" if rule.category.name == "Transfer Out" else "Transfer Out"
+            opp_cat_id = transfer_cat_ids.get(opp_name)
+            if opp_cat_id:
+                await _link_counterpart(db, tx, opp_cat_id)
+
         await db.commit()
 
     return {
