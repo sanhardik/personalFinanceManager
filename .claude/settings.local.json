@@ -5,7 +5,19 @@
       "Bash(./run.sh status:*)",
       "Bash(curl:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(docker exec:*)",
+      "Read(//Users/permaconn/Downloads/**)",
+      "Bash(gh repo:*)",
+      "Bash(gh issue:*)",
+      "Bash(gh label:*)",
+      "Bash(git -C /Users/permaconn/ClaudeCoWork/FinancePortfolioManager remote -v)",
+      "Bash(git -C /Users/permaconn/ClaudeCoWork/FinancePortfolioManager/finance-app remote -v)",
+      "Bash(git:*)",
+      "Bash(gh pr:*)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "code-review-graph"
+  ]
 }
