@@ -12,6 +12,7 @@ import {
   fetchDashboardByCategory,
 } from '../api/dashboard';
 import { useTransactionStats } from '../contexts/TransactionStatsContext';
+import { useCategoriseDrawer } from '../contexts/CategoriseDrawerContext';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -105,6 +106,7 @@ function CategoryChart({ title, data, emptyMsg }) {
 
 export default function Dashboard() {
   const { stats } = useTransactionStats();
+  const { open: openDrawer } = useCategoriseDrawer();
   const pct = stats && stats.total > 0 ? Math.round((stats.categorised / stats.total) * 100) : 0;
 
   const [dateFrom, setDateFrom] = useState(defaultDateFrom);
@@ -187,9 +189,12 @@ export default function Dashboard() {
             </div>
           </div>
           {stats.uncategorised > 0 && (
-            <span className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded-lg whitespace-nowrap">
+            <button
+              onClick={openDrawer}
+              className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded-lg whitespace-nowrap hover:bg-orange-100 transition-colors"
+            >
               {stats.uncategorised} uncategorised
-            </span>
+            </button>
           )}
         </div>
       )}

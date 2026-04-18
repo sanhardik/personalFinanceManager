@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { ArrowLeftRight, Search, ChevronLeft, ChevronRight, Loader2, CheckCircle2, X, Sparkles, ArrowRight, Check, Link2 } from 'lucide-react';
 import { fetchTransactions, patchTransaction, bulkCategorise } from '../api/transactions';
 import { useTransactionStats } from '../contexts/TransactionStatsContext';
+import { useCategoriseDrawer } from '../contexts/CategoriseDrawerContext';
 import { fetchAccounts } from '../api/accounts';
 import { fetchCategories } from '../api/categories';
 import { acceptSuggestion, dismissSuggestion } from '../api/rules';

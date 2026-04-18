@@ -22,3 +22,6 @@ export const deleteTransactionsByAccount = (accountId) =>
   api.delete('/transactions', { params: { account_id: accountId } }).then(r => r.data);
 export const bulkCategorise = (transaction_ids, category_id, transfer_account_id = null) =>
   api.post('/transactions/bulk-categorise', { transaction_ids, category_id, transfer_account_id }).then(r => r.data);
+
+export const fetchUncategorisedGroups = () =>
+  api.get('/transactions/uncategorised-groups').then(r => r.data);

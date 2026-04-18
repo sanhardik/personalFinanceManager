@@ -134,6 +134,86 @@ async def get_transaction_count(db: AsyncSession = Depends(get_db)):
     return {"total": total, "uncategorised": uncategorised, "categorised": total - uncategorised}
 
 
+@router.get("/uncategorised-groups")
+async def get_uncategorised_groups(db: AsyncSession = Depends(get_db)):
+    """
+    Groups uncategorised transactions by extracted merchant pattern.
+    For each group, checks active rules then suggested_rules for a category suggestion.
+    Returns list sorted by count DESC.
+    """
+    # Load all uncategorised transactions
+    tx_result = await db.execute(
+        select(Transaction).where(Transaction.is_categorised == False).order_by(Transaction.tx_date.desc())
+    )
+    transactions = tx_result.scalars().all()
+
+    # Group by merchant pattern (extract_merchant_pattern reused from PATCH logic)
+    from collections import defaultdict
+    groups: dict[str, list] = defaultdict(list)
+    for tx in transactions:
+        pattern = extract_merchant_pattern(tx.tx_desc)
+        key = pattern if pattern else tx.tx_desc[:40].strip()
+        groups[key].append(tx)
+
+    # Load active rules and suggested rules for suggestion lookup
+    rules_result = await db.execute(
+        select(Rule).where(Rule.is_active == True)
+    )
+    rules = {r.pattern.lower(): r for r in rules_result.scalars().all()}
+
+    sugg_result = await db.execute(
+        select(SuggestedRule)
+        .where(SuggestedRule.status == "pending")
+        .order_by(desc(SuggestedRule.hit_count))
+    )
+    suggestions_map: dict[str, SuggestedRule] = {}
+    for s in sugg_result.scalars().all():
+        if s.pattern.lower() not in suggestions_map:
+            suggestions_map[s.pattern.lower()] = s
+
+    # Load category names for suggestions
+    cat_ids = set()
+    for r in rules.values():
+        cat_ids.add(r.category_id)
+    for s in suggestions_map.values():
+        cat_ids.add(s.category_id)
+
+    cats = {}
+    if cat_ids:
+        cat_result = await db.execute(select(Category).where(Category.id.in_(cat_ids)))
+        cats = {c.id: c for c in cat_result.scalars().all()}
+
+    # Build response
+    result = []
+    for pattern_key, txs in sorted(groups.items(), key=lambda x: -len(x[1])):
+        suggested_category_id = None
+        suggested_category_name = None
+
+        # Check rules first
+        rule = rules.get(pattern_key.lower())
+        if rule and rule.category_id in cats:
+            suggested_category_id = rule.category_id
+            suggested_category_name = cats[rule.category_id].name
+        else:
+            # Fall back to suggested rules
+            sugg = suggestions_map.get(pattern_key.lower())
+            if sugg and sugg.category_id in cats:
+                suggested_category_id = sugg.category_id
+                suggested_category_name = cats[sugg.category_id].name
+
+        result.append({
+            "description": pattern_key,
+            "count": len(txs),
+            "total_amount": round(sum(abs(t.tx_amount) for t in txs), 2),
+            "transaction_ids": [t.id for t in txs],
+            "dates": sorted(set(t.tx_date.strftime("%Y-%m-%d") for t in txs), reverse=True)[:3],
+            "suggested_category_id": suggested_category_id,
+            "suggested_category_name": suggested_category_name,
+        })
+
+    return result
+
+
 @router.patch("/{tx_id}", response_model=TransactionPatchResponse)
 async def patch_transaction(
     tx_id: int,
