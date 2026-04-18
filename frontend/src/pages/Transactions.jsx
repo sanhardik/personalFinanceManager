@@ -132,7 +132,7 @@ export default function Transactions() {
         const similar = await fetchTransactions({ search: updated.similar_prefix, categorised: false });
         const ids = similar.items.filter(t => t.id !== txId).map(t => t.id);
         if (ids.length > 0) {
-          setSuggestion({ categoryId, categoryName: updated.category_name, prefix: updated.similar_prefix, count: ids.length, ids });
+          setSuggestion({ categoryId, categoryName: updated.category_name, prefix: updated.similar_prefix, count: ids.length, ids, transferAccountId: transferAccountId || null });
         }
       }
     } catch (err) {
@@ -181,7 +181,7 @@ export default function Transactions() {
   const handleApplySuggestion = async () => {
     if (!suggestion) return;
     try {
-      const result = await bulkCategorise(suggestion.ids, suggestion.categoryId);
+      const result = await bulkCategorise(suggestion.ids, suggestion.categoryId, suggestion.transferAccountId || null);
       setTransactions(prev => prev.map(tx =>
         suggestion.ids.includes(tx.id)
           ? { ...tx, category_id: suggestion.categoryId, category_name: suggestion.categoryName, is_categorised: true }

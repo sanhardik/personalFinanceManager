@@ -245,6 +245,7 @@ class BulkCategoriseRequest(BaseModel):
     """POST /transactions/bulk-categorise — set category on multiple transactions."""
     transaction_ids: list[int]
     category_id: int
+    transfer_account_id: int | None = None
 
 
 class BulkCategoriseResponse(BaseModel):
