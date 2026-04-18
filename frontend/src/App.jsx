@@ -10,6 +10,7 @@
 
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout/Layout';
+import { TransactionStatsProvider } from './contexts/TransactionStatsContext';
 import Accounts from './pages/Accounts';
 import Dashboard from './pages/Dashboard';
 import Transactions from './pages/Transactions';
@@ -23,6 +24,7 @@ import SettingsPage from './pages/SettingsPage';
 
 function App() {
   return (
+    <TransactionStatsProvider>
     <BrowserRouter>
       <Routes>
         {/* All pages share the Layout (sidebar + header) */}
@@ -40,6 +42,7 @@ function App() {
         </Route>
       </Routes>
     </BrowserRouter>
+    </TransactionStatsProvider>
   );
 }
 

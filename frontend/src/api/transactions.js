@@ -14,6 +14,9 @@ export async function fetchTransactions({ accountId, txType, search, categorised
   return response.data;
 }
 
+export const fetchTransactionCount = () =>
+  api.get('/transactions/count').then(r => r.data);
+
 export const patchTransaction = (id, data) => api.patch(`/transactions/${id}`, data).then(r => r.data);
 export const deleteTransactionsByAccount = (accountId) =>
   api.delete('/transactions', { params: { account_id: accountId } }).then(r => r.data);

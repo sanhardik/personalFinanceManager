@@ -10,7 +10,7 @@ import json
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, asc, desc, or_
+from sqlalchemy import select, func, case, asc, desc, or_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -117,6 +117,21 @@ async def list_transactions(
         "per_page": per_page,
         "pages": (total + per_page - 1) // per_page if total > 0 else 0,
     }
+
+
+@router.get("/count")
+async def get_transaction_count(db: AsyncSession = Depends(get_db)):
+    """Return global (all-time) transaction counts: total, categorised, uncategorised."""
+    result = await db.execute(
+        select(
+            func.count(Transaction.id).label("total"),
+            func.sum(case((Transaction.is_categorised == False, 1), else_=0)).label("uncategorised"),
+        )
+    )
+    row = result.one()
+    total = int(row.total or 0)
+    uncategorised = int(row.uncategorised or 0)
+    return {"total": total, "uncategorised": uncategorised, "categorised": total - uncategorised}
 
 
 @router.patch("/{tx_id}", response_model=TransactionPatchResponse)

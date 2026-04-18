@@ -8,12 +8,14 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Upload, FileUp, CheckCircle2, AlertCircle, Loader2, X,
-  ChevronLeft, FileText, Home, Building2, CreditCard,
+  ChevronLeft, FileText, Home, Building2, CreditCard, ArrowRight,
 } from 'lucide-react';
 import { detectCSV, uploadCSV, fetchSupportedBanks } from '../api/upload';
 import { fetchAccountsSummary } from '../api/accounts';
+import { useTransactionStats } from '../contexts/TransactionStatsContext';
 
 const BANK_DOMAINS = {
   Westpac: 'westpac.com.au',
@@ -206,7 +208,7 @@ function AccountAssignment({ detected, existingAccounts, assignments, onChange }
 
 // ── Result card ───────────────────────────────────────────────
 
-function UploadResult({ result, onReset }) {
+function UploadResult({ result, onReset, onCategorise }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="p-4 bg-green-50 border-b border-green-100 flex items-center justify-between">
@@ -222,10 +224,19 @@ function UploadResult({ result, onReset }) {
             </p>
           </div>
         </div>
-        <button onClick={onReset}
-          className="text-xs text-green-600 hover:text-green-800 px-3 py-1.5 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
-          Upload another
-        </button>
+        <div className="flex items-center gap-2">
+          {result.inserted > 0 && (
+            <button onClick={onCategorise}
+              className="text-xs text-white bg-orange-500 hover:bg-orange-600 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors font-medium">
+              Categorise now
+              <ArrowRight size={12} />
+            </button>
+          )}
+          <button onClick={onReset}
+            className="text-xs text-green-600 hover:text-green-800 px-3 py-1.5 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
+            Upload another
+          </button>
+        </div>
       </div>
 
       <div className="p-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -259,6 +270,8 @@ function UploadResult({ result, onReset }) {
 // ── Main page ─────────────────────────────────────────────────
 
 export default function UploadCSV() {
+  const navigate = useNavigate();
+  const { refresh: refreshStats } = useTransactionStats();
   const [banks, setBanks] = useState([]);
   const [existingAccounts, setExistingAccounts] = useState([]);
   const [selectedBank, setSelectedBank] = useState(null);
@@ -326,6 +339,7 @@ export default function UploadCSV() {
       );
       setResult(data);
       setStep('done');
+      refreshStats();
       // Refresh existing accounts for next upload
       fetchAccountsSummary().then(setExistingAccounts).catch(() => {});
     } catch (err) {
@@ -356,7 +370,7 @@ export default function UploadCSV() {
       </div>
 
       {step === 'done' && result ? (
-        <UploadResult result={result} onReset={reset} />
+        <UploadResult result={result} onReset={reset} onCategorise={() => navigate('/transactions')} />
       ) : (
         <div className="space-y-6">
           {/* Step 1 — Bank */}

@@ -11,6 +11,7 @@ import {
   fetchDashboardMonthly,
   fetchDashboardByCategory,
 } from '../api/dashboard';
+import { useTransactionStats } from '../contexts/TransactionStatsContext';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -103,6 +104,9 @@ function CategoryChart({ title, data, emptyMsg }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
+  const { stats } = useTransactionStats();
+  const pct = stats && stats.total > 0 ? Math.round((stats.categorised / stats.total) * 100) : 0;
+
   const [dateFrom, setDateFrom] = useState(defaultDateFrom);
   const [dateTo, setDateTo] = useState(() => new Date().toISOString().split('T')[0]);
 
@@ -166,6 +170,28 @@ export default function Dashboard() {
 
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{error}</div>
+      )}
+
+      {stats && stats.total > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4 flex items-center gap-4">
+          <div className="flex-1">
+            <div className="flex justify-between text-xs text-gray-500 mb-1">
+              <span>Categorisation progress</span>
+              <span>{pct}% — {stats.categorised} of {stats.total} transactions</span>
+            </div>
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-blue-500 rounded-full transition-all"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+          </div>
+          {stats.uncategorised > 0 && (
+            <span className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded-lg whitespace-nowrap">
+              {stats.uncategorised} uncategorised
+            </span>
+          )}
+        </div>
       )}
 
       {loading && (

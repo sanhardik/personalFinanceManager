@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { ArrowLeftRight, Search, ChevronLeft, ChevronRight, Loader2, CheckCircle2, X, Sparkles, ArrowRight, Check, Link2 } from 'lucide-react';
 import { fetchTransactions, patchTransaction, bulkCategorise } from '../api/transactions';
+import { useTransactionStats } from '../contexts/TransactionStatsContext';
 import { fetchAccounts } from '../api/accounts';
 import { fetchCategories } from '../api/categories';
 import { acceptSuggestion, dismissSuggestion } from '../api/rules';
@@ -9,6 +10,7 @@ import { SortableHeader } from '../components/SortableHeader';
 import { useSortable } from '../hooks/useSortable';
 
 export default function Transactions() {
+  const { stats, refresh: refreshStats } = useTransactionStats();
   const [transactions, setTransactions] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -112,6 +114,7 @@ export default function Transactions() {
       const body = { category_id: categoryId, transfer_account_id: transferAccountId ? parseInt(transferAccountId) : null };
       const updated = await patchTransaction(txId, body);
       setTransactions(prev => prev.map(tx => tx.id === txId ? { ...tx, ...updated } : tx));
+      refreshStats();
 
       // Transfer auto-match banner
       if (updated.transfer_matched_account) {
@@ -250,10 +253,22 @@ export default function Transactions() {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
         <ArrowLeftRight size={22} className="text-gray-700" />
         <h2 className="text-xl font-semibold text-gray-800">Transactions</h2>
         <span className="text-sm text-gray-400 ml-2">{pagination.total} total</span>
+        {stats?.uncategorised > 0 && (
+          <button
+            onClick={() => setCategoryFilter(categoryFilter === 'uncategorised' ? '' : 'uncategorised')}
+            className={`ml-2 text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
+              categoryFilter === 'uncategorised'
+                ? 'bg-orange-500 text-white'
+                : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+            }`}
+          >
+            {stats.uncategorised} uncategorised
+          </button>
+        )}
       </div>
 
       {/* Filters */}
