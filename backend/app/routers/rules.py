@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Category, Rule, SuggestedRule, Transaction
+from app.models import Account, Category, Rule, SuggestedRule, Transaction
 from app.schemas import AffectedTransaction, RuleAffectedResponse, RuleCreate, RuleResponse, RuleUpdate, SuggestedRuleResponse
 from app.services.categoriser import apply_rules_to_transactions
 
@@ -23,14 +23,20 @@ router = APIRouter(prefix="/rules", tags=["rules"])
 
 
 def _rule_to_response(rule: Rule) -> RuleResponse:
-    return RuleResponse.model_validate(rule)
+    data = RuleResponse.model_validate(rule)
+    # Populate transfer_account_name from the eagerly-loaded relationship
+    if rule.transfer_account is not None:
+        data.transfer_account_name = rule.transfer_account.account_name or rule.transfer_account.account_number
+    return data
 
 
 @router.get("", response_model=list[RuleResponse])
 async def list_rules(db: AsyncSession = Depends(get_db)):
     """List all rules with their associated category."""
     result = await db.execute(
-        select(Rule).options(selectinload(Rule.category)).order_by(Rule.id)
+        select(Rule)
+        .options(selectinload(Rule.category), selectinload(Rule.transfer_account))
+        .order_by(Rule.id)
     )
     return [_rule_to_response(r) for r in result.scalars().all()]
 
@@ -42,14 +48,21 @@ async def create_rule(body: RuleCreate, db: AsyncSession = Depends(get_db)):
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
 
+    if body.transfer_account_id is not None:
+        acc = await db.get(Account, body.transfer_account_id)
+        if not acc:
+            raise HTTPException(status_code=404, detail="Transfer account not found")
+
     rule = Rule(pattern=body.pattern, category_id=body.category_id, transfer_account_id=body.transfer_account_id)
     db.add(rule)
     await db.commit()
     await db.refresh(rule)
 
-    # Reload with relationship
+    # Reload with relationships
     result = await db.execute(
-        select(Rule).options(selectinload(Rule.category)).where(Rule.id == rule.id)
+        select(Rule)
+        .options(selectinload(Rule.category), selectinload(Rule.transfer_account))
+        .where(Rule.id == rule.id)
     )
     return _rule_to_response(result.scalar_one())
 
@@ -73,13 +86,21 @@ async def update_rule(rule_id: int, body: RuleUpdate, db: AsyncSession = Depends
         rule.category_id = body.category_id
     if body.is_active is not None:
         rule.is_active = body.is_active
+    if "transfer_account_id" in body.model_fields_set:
+        if body.transfer_account_id is not None:
+            acc = await db.get(Account, body.transfer_account_id)
+            if not acc:
+                raise HTTPException(status_code=404, detail="Transfer account not found")
+        rule.transfer_account_id = body.transfer_account_id
 
     await db.commit()
 
-    # Expire cached relationship before reload to avoid stale identity map
-    db.expire(rule, ["category"])
+    # Expire cached relationships before reload to avoid stale identity map
+    db.expire(rule, ["category", "transfer_account"])
     result = await db.execute(
-        select(Rule).options(selectinload(Rule.category)).where(Rule.id == rule_id)
+        select(Rule)
+        .options(selectinload(Rule.category), selectinload(Rule.transfer_account))
+        .where(Rule.id == rule_id)
     )
     return _rule_to_response(result.scalar_one())
 
@@ -152,9 +173,11 @@ async def accept_suggestion(suggestion_id: int, db: AsyncSession = Depends(get_d
     suggestion.promoted_rule_id = rule.id
     await db.commit()
 
-    # Reload rule with category relationship
+    # Reload rule with relationships
     result = await db.execute(
-        select(Rule).options(selectinload(Rule.category)).where(Rule.id == rule.id)
+        select(Rule)
+        .options(selectinload(Rule.category), selectinload(Rule.transfer_account))
+        .where(Rule.id == rule.id)
     )
     return _rule_to_response(result.scalar_one())
 

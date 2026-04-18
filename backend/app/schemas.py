@@ -277,6 +277,7 @@ class RuleResponse(BaseModel):
     pattern: str
     category_id: int
     transfer_account_id: int | None
+    transfer_account_name: str | None = None
     category: CategoryResponse
     is_active: bool
     created_at: datetime
