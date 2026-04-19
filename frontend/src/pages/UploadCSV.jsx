@@ -11,7 +11,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Upload, FileUp, CheckCircle2, AlertCircle, Loader2, X,
-  ChevronLeft, FileText, Home, Building2, CreditCard, ArrowRight,
+  ChevronLeft, FileText, Home, Building2, CreditCard, ArrowRight, TrendingUp,
 } from 'lucide-react';
 import { detectCSV, uploadCSV, fetchSupportedBanks } from '../api/upload';
 import { fetchAccountsSummary } from '../api/accounts';
@@ -21,18 +21,21 @@ const BANK_DOMAINS = {
   Westpac: 'westpac.com.au',
   NAB: 'nab.com.au',
   Macquarie: 'macquarie.com',
+  Superhero: 'superhero.com.au',
 };
 
 const ACCOUNT_TYPE_ICON = {
   home_loan: Home,
   credit_card: CreditCard,
   bank: Building2,
+  investment: TrendingUp,
 };
 
 const ACCOUNT_TYPE_LABEL = {
   home_loan: 'Home Loan',
   credit_card: 'Credit Card',
   bank: 'Bank Account',
+  investment: 'Investment Account',
 };
 
 // ── Bank logo ─────────────────────────────────────────────────
@@ -108,8 +111,17 @@ function DropZone({ bank, onFile, detecting }) {
       <div className="mb-4 p-3 bg-blue-50 border border-blue-100 rounded-lg flex items-start gap-2">
         <FileText size={15} className="text-blue-500 mt-0.5 shrink-0" />
         <div>
-          <p className="text-xs font-medium text-blue-700">{bank.name} CSV — expected columns:</p>
-          <p className="text-xs text-blue-600 mt-0.5 font-mono">{bank.required_headers.join(', ')}</p>
+          <p className="text-xs font-medium text-blue-700">
+            {bank.platform_type === 'stock'
+              ? `${bank.name} Transaction Statement — auto-detected from file content`
+              : `${bank.name} CSV — expected columns:`}
+          </p>
+          {bank.platform_type !== 'stock' && (
+            <p className="text-xs text-blue-600 mt-0.5 font-mono">{bank.required_headers.join(', ')}</p>
+          )}
+          {bank.platform_type === 'stock' && (
+            <p className="text-xs text-blue-600 mt-0.5">Export from Superhero → Accounts → Transaction Statement → Download CSV</p>
+          )}
         </div>
       </div>
       <div
@@ -208,7 +220,7 @@ function AccountAssignment({ detected, existingAccounts, assignments, onChange }
 
 // ── Result card ───────────────────────────────────────────────
 
-function UploadResult({ result, onReset, onCategorise }) {
+function UploadResult({ result, onReset, onCategorise, onViewInvestments, isStock }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="p-4 bg-green-50 border-b border-green-100 flex items-center justify-between">
@@ -219,13 +231,20 @@ function UploadResult({ result, onReset, onCategorise }) {
               Upload Complete — {result.bank_name}
             </p>
             <p className="text-green-600 text-xs mt-0.5">
-              {result.inserted} transactions imported
+              {result.inserted} {isStock ? 'trades' : 'transactions'} imported
               {result.duplicates > 0 && `, ${result.duplicates} duplicates skipped`}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {result.inserted > 0 && (
+          {result.inserted > 0 && isStock && (
+            <button onClick={onViewInvestments}
+              className="text-xs text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors font-medium">
+              View Holdings
+              <ArrowRight size={12} />
+            </button>
+          )}
+          {result.inserted > 0 && !isStock && (
             <button onClick={onCategorise}
               className="text-xs text-white bg-orange-500 hover:bg-orange-600 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors font-medium">
               Categorise now
@@ -242,7 +261,7 @@ function UploadResult({ result, onReset, onCategorise }) {
       <div className="p-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
         {[
           { label: 'Total Rows', value: result.total_rows },
-          { label: 'Imported', value: result.inserted, colour: 'text-green-600' },
+          { label: isStock ? 'Trades Imported' : 'Imported', value: result.inserted, colour: 'text-green-600' },
           { label: 'Duplicates', value: result.duplicates, colour: 'text-yellow-600' },
           { label: 'Accounts', value: result.accounts_found.length },
         ].map(s => (
@@ -370,7 +389,13 @@ export default function UploadCSV() {
       </div>
 
       {step === 'done' && result ? (
-        <UploadResult result={result} onReset={reset} onCategorise={() => navigate('/transactions')} />
+        <UploadResult
+          result={result}
+          onReset={reset}
+          onCategorise={() => navigate('/transactions')}
+          onViewInvestments={() => navigate('/investments')}
+          isStock={selectedBank?.platform_type === 'stock'}
+        />
       ) : (
         <div className="space-y-6">
           {/* Step 1 — Bank */}

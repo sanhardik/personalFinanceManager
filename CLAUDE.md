@@ -68,6 +68,7 @@ Hardik Sanghavi (hardik.sanghavi@permaconn.com). Building a personal finance man
 | 7 | NAB parser + auto-detection | Done |
 | 8 | Macquarie parser | Done |
 | 9 | Home Loan Tracking — Assets, Loans pages, loan CSV detection, upload flow | Done |
+| 10 | Superhero CSV ingestion — stock trades, holdings, P&L analytics, ARR | Done |
 
 ## Chunk 1 — What Was Built (DONE)
 ### Backend (Python FastAPI)
@@ -348,6 +349,70 @@ Implemented as part of Chunk 3 inside `app/routers/transactions.py`:
 ./run.sh logs test      # Show last test run output + debug log
 ```
 tmux shortcuts: `Ctrl+B D` detach, `tmux attach -t finance-app` re-attach
+
+## Chunk 10 — What Was Built (DONE)
+### Superhero CSV Ingestion — Stock Trades & Holdings
+
+### Superhero CSV Format
+| Field | Notes |
+|-------|-------|
+| Metadata block | Entity Name, Account Name, Account Number, Report dates — above data header |
+| Date format | DD/MM/YYYY |
+| Amounts | `$` prefix; Buy net_amount is negative (outflow), Dividend positive |
+| Dividend rows | Empty Quantity + Average Price columns |
+| Settlement Date | May be empty |
+
+### Backend
+- `app/parsers/base.py` — Added `ParsedStockTrade` + `StockParseResult` dataclasses
+- `app/parsers/superhero.py` — `SuperheroParser`: `can_parse(content)` scans first 30 lines for data header; two-pass parse extracts metadata then trades; strips `$` from amounts
+- `app/parsers/registry.py` — `detect_stock_parser(content)` tries SuperheroParser on full content
+- `app/models.py` — `StockTrade` model (SHA256 dedup on account_id|trade_date|security_code|trade_type|net_amount); `StockValuation` model (user-entered current price per security)
+- `app/services/upload.py` — `process_stock_csv_upload()`: detect → parse → upsert account → insert trades
+- `app/routers/upload.py` — Rewritten: tries bank parsers first, falls back to stock parsers; `/detect` endpoint returns `csv_type: "bank" | "stock"`
+- `app/routers/investments.py` — Extended with: `GET /{id}/trades` (filterable, paginated); `GET /{id}/holdings` (aggregated P&L, ARR, cost basis, dividends); `GET /{id}/dividends` (monthly by security); `GET /{id}/performance` (cumulative cost basis); `PATCH /holdings/{id}/{code}/price` (update current price → re-derive P&L)
+- `app/schemas.py` — `StockTradeResponse`, `HoldingRow` (full P&L + ARR), `DividendRow`, `PerformanceRow`, `HoldingPriceUpdate`
+- `app/services/seed.py` — Added `Stock Purchase` (Expense) + `Dividend Income` (Income) system categories
+- `tests/conftest.py` — Added `stock_valuations` + `stock_trades` to truncate_data fixture (in FK-safe order)
+- `tests/fixtures/superhero_sample.csv` — 8-row fixture (PMGOLD, IVV, VTS, AAA; buys + dividends)
+- `tests/test_superhero_parser.py` — 22 tests: detection, metadata, buy/dividend parsing, dollar-sign stripping, dedup, upload integration, holdings aggregation, price update
+
+### Superhero Cash Statement (added in Chunk 10 extension)
+Superhero's Cash Statement CSV tracks AUD cash account activity (deposits, FX transfers, stock purchases, dividends). Only deposits and FX transfers are imported; stock purchases and dividends are skipped (already captured in the Transaction Statement).
+
+| Row Type | Action |
+|----------|--------|
+| "You deposited funds" | Imported as `Income` |
+| "You transferred AUD into USD" | Imported as `Expense` |
+| "You bought …" / "You ught …" (typo) | Skipped |
+| "You were paid … dividend" | Skipped |
+| TOTAL summary row | Skipped |
+
+- `app/parsers/superhero_cash.py` — `SuperheroCashParser`: `can_parse(content)` scans for `{Date, Description, Debit, Credit, Balance}` headers while excluding Transaction Statement markers; account number appended with `-CASH-AUD` suffix; account_type = `"bank"`
+- `app/parsers/registry.py` — `detect_cash_parser(content)` added; `get_all_platform_info()` includes "Superhero Cash" entry
+- `app/services/upload.py` — `_process_parse_result()` extracted as shared helper; `process_csv_upload()` tries standard → cash parser chain
+- `app/routers/upload.py` — `/detect` and `POST /upload` both try cash parser between standard bank parsers and stock parser
+- `tests/fixtures/superhero_cash_sample.csv` — 8-row fixture (3 deposits, 2 buys, 1 dividend, 1 FX transfer, 1 typo buy, TOTAL)
+- `tests/test_superhero_cash_parser.py` — 27 tests: `can_parse`, registry, metadata, deposits, FX transfers, skipped rows, amounts, dedup, upload integration
+
+### Analytics Metrics
+| Metric | How Derived |
+|--------|-------------|
+| Cost Basis | SUM(ABS(net_amount)) for Buy trades |
+| Current Value | current_price × quantity_held |
+| Unrealised Gain | current_value − cost_basis |
+| Total Dividends | SUM(net_amount) for Dividend Received |
+| Total Return % | (unrealised_gain + dividends) / cost_basis |
+| ARR | `(current_value / cost_basis)^(1/years) − 1`; `⚡` badge if < 1 yr hold |
+| First Buy Date | MIN(trade_date) for Buy trades |
+
+### Frontend
+- `src/api/investments.js` — Added `fetchHoldings`, `fetchTrades`, `fetchDividends`, `fetchPerformance`, `patchHoldingPrice`
+- `src/pages/Investments.jsx` — Full rewrite: Superhero accounts show "Holdings" button; expands to show:
+  - 3-panel charts: sector donut (cost basis), dividend timeline (stacked bar by security), cumulative cost basis line chart
+  - Holdings/returns table: Code, Security, Qty, Avg Cost, Cost Basis, Current Value (inline price editor ✏️), Price Return, Dividends, Total Gain, Total Return %, ARR (⚡ badge for < 1yr), First Buy
+  - Expandable trades sub-table per security (click `›` arrow)
+
+### Tests (233 passed, 5 skipped — all green)
 
 ## Deep Memory
 Full glossary, project details, and old DB schema are in the `memory/` directory:

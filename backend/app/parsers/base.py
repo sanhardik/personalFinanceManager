@@ -41,6 +41,38 @@ class ParseResult:
     errors: list[str]          # Non-fatal parse errors
 
 
+@dataclass
+class ParsedStockTrade:
+    """A single stock trade extracted from a brokerage CSV."""
+
+    account_number: str
+    trade_date: datetime
+    settlement_date: datetime | None
+    security_name: str
+    security_code: str
+    trade_type: str          # "Buy" | "Sell" | "Dividend Received"
+    quantity: float | None   # None for dividends
+    avg_price: float | None  # None for dividends
+    net_amount: float        # negative=outflow (Buy), positive=inflow (Sell/Dividend)
+    brokerage: float
+    gst: float
+    tax: float
+
+
+@dataclass
+class StockParseResult:
+    """Result of parsing a brokerage CSV file."""
+
+    platform_name: str
+    account_number: str
+    account_name: str
+    entity_name: str
+    trades: list[ParsedStockTrade]
+    row_count: int
+    skipped_count: int
+    errors: list[str]
+
+
 class BankParser(ABC):
     """
     Abstract base class for bank CSV parsers.
