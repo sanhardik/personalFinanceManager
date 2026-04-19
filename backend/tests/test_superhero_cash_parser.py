@@ -302,3 +302,137 @@ async def test_cash_and_trade_uploads_separate_accounts(client: AsyncClient):
     assert r1.json()["accounts_found"] != r2.json()["accounts_found"]
     assert "C6490998-CASH-AUD" in r1.json()["accounts_found"]
     assert "C6490998" in r2.json()["accounts_found"]
+
+
+# ── USD Cash Statement ────────────────────────────────────────────────────────
+
+USD_SAMPLE = """\
+Entity Name,Sanghavi Ventures Pty Ltd
+Account Name,Sanghavi Family Trust
+Account Number,C6490998
+Report Start Date,01/07/2025
+Report End Date,19/04/2026
+Report Creation Date,19/04/2026 21:38:32
+
+
+0
+"Date","Description","Debit ","Credit ","Balance "
+"07/07/2025","You were paid [income subtype] dividend from NVIDIA Corporation","","$0.45","$4.99"
+"23/07/2025","You transferred AUD into USD","","$715.85","$720.84"
+"23/07/2025","You bought 1 Meta Platforms Inc shares","-$701.99","","$18.85"
+"06/10/2025","You transferred AUD into USD","","$452.98","$472.98"
+"10/11/2025","You were paid [income subtype] dividend from ASML Holding NV","","$0.34","$87.38"
+"TOTAL","","-$1,689.93","$1,690.34",""
+"""
+
+
+def test_usd_can_parse():
+    assert SuperheroCashParser().can_parse(USD_SAMPLE) is True
+
+
+def test_usd_account_number_slug():
+    result = SuperheroCashParser().parse(USD_SAMPLE)
+    for tx in result.transactions:
+        assert tx.account_number == "C6490998-CASH-USD"
+
+
+def test_usd_account_name():
+    result = SuperheroCashParser().parse(USD_SAMPLE)
+    for tx in result.transactions:
+        assert tx.account_name == "Sanghavi Family Trust (USD Cash)"
+
+
+def test_usd_account_type_is_bank():
+    result = SuperheroCashParser().parse(USD_SAMPLE)
+    for tx in result.transactions:
+        assert tx.account_type == "bank"
+
+
+def test_usd_fx_transfer_imported_as_income():
+    """AUD→USD transfers appear as Credits in the USD account → Income."""
+    result = SuperheroCashParser().parse(USD_SAMPLE)
+    fx = [t for t in result.transactions if "USD" in t.tx_desc]
+    assert len(fx) == 2
+    for t in fx:
+        assert t.tx_type == "Income"
+    amounts = sorted(t.tx_amount for t in fx)
+    assert amounts == pytest.approx([452.98, 715.85])
+
+
+def test_usd_dividend_skipped():
+    result = SuperheroCashParser().parse(USD_SAMPLE)
+    divs = [t for t in result.transactions if "dividend" in t.tx_desc.lower()]
+    assert len(divs) == 0
+
+
+def test_usd_stock_purchase_skipped():
+    result = SuperheroCashParser().parse(USD_SAMPLE)
+    buys = [t for t in result.transactions if "bought" in t.tx_desc.lower()]
+    assert len(buys) == 0
+
+
+def test_usd_total_row_skipped():
+    result = SuperheroCashParser().parse(USD_SAMPLE)
+    totals = [t for t in result.transactions if "TOTAL" in t.tx_desc.upper()]
+    assert len(totals) == 0
+
+
+def test_usd_only_fx_transfers_imported():
+    """Only the 2 FX transfer rows should be imported."""
+    result = SuperheroCashParser().parse(USD_SAMPLE)
+    assert len(result.transactions) == 2
+
+
+def test_aud_and_usd_are_separate_accounts():
+    """AUD and USD Cash Statements produce different account numbers."""
+    aud = SuperheroCashParser().parse(SAMPLE)
+    usd = SuperheroCashParser().parse(USD_SAMPLE)
+    aud_numbers = {t.account_number for t in aud.transactions}
+    usd_numbers = {t.account_number for t in usd.transactions}
+    assert aud_numbers == {"C6490998-CASH-AUD"}
+    assert usd_numbers == {"C6490998-CASH-USD"}
+    assert aud_numbers.isdisjoint(usd_numbers)
+
+
+def test_usd_can_parse_fixture():
+    assert SuperheroCashParser().can_parse(_load_fixture("superhero_usd_cash_sample.csv")) is True
+
+
+def test_usd_fixture_import_counts():
+    """Full USD fixture: 2 FX transfers imported, rest skipped."""
+    content = _load_fixture("superhero_usd_cash_sample.csv")
+    result = SuperheroCashParser().parse(content)
+    fx = [t for t in result.transactions if "USD" in t.tx_desc]
+    assert len(fx) == 2
+    assert len(result.transactions) == 2
+
+
+@pytest.mark.asyncio
+async def test_upload_usd_cash_statement(client: AsyncClient):
+    """POST /upload with a USD Cash Statement creates a separate USD account."""
+    content = _load_fixture("superhero_usd_cash_sample.csv")
+    r = await client.post(
+        "/upload",
+        files={"file": ("superhero_usd_cash_sample.csv", io.BytesIO(content.encode()), "text/csv")},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["bank_name"] == "Superhero"
+    assert data["inserted"] == 2
+    assert data["duplicates"] == 0
+    assert "C6490998-CASH-USD" in data["accounts_found"]
+
+
+@pytest.mark.asyncio
+async def test_aud_and_usd_uploads_separate_accounts(client: AsyncClient):
+    """Uploading both AUD and USD Cash Statements creates two distinct accounts."""
+    aud = _load_fixture("superhero_cash_sample.csv")
+    usd = _load_fixture("superhero_usd_cash_sample.csv")
+
+    r1 = await client.post("/upload", files={"file": ("aud.csv", io.BytesIO(aud.encode()), "text/csv")})
+    r2 = await client.post("/upload", files={"file": ("usd.csv", io.BytesIO(usd.encode()), "text/csv")})
+
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+    assert "C6490998-CASH-AUD" in r1.json()["accounts_found"]
+    assert "C6490998-CASH-USD" in r2.json()["accounts_found"]

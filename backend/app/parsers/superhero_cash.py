@@ -1,5 +1,5 @@
 """
-Superhero Cash Statement CSV parser.
+Superhero Cash Statement CSV parser — handles both AUD and USD cash accounts.
 
 Superhero Cash Statement format:
   Multi-row metadata header (same as Transaction Statement):
@@ -14,7 +14,11 @@ Superhero Cash Statement format:
     "02/07/2025","You bought 2 Perth Mint Gold shares","-$101.02","","$1,059.26"
     "TOTAL","","-$13,324.11","$12,904.92",""
 
-Import rules:
+Currency detection (both files share identical headers):
+  AUD — contains "You deposited funds" rows (bank → Superhero AUD top-ups)
+  USD — no deposits; "You transferred AUD into USD" appears as Credit (inflow)
+
+Import rules — AUD account:
   IMPORT  — "You deposited funds into your account"   → Credit / Income
   IMPORT  — "You transferred AUD into USD"            → Debit  / Expense
   SKIP    — "You bought ..."                           → already in Transaction Statement
@@ -22,11 +26,16 @@ Import rules:
   SKIP    — "You were paid ... dividend ..."           → already in Transaction Statement
   SKIP    — Date == "TOTAL"                            → summary row
 
-Account:
-  account_number: {Account Number}-CASH-AUD  (e.g. "C6490998-CASH-AUD")
-  account_name:   {Account Name} (AUD Cash)  (e.g. "Sanghavi Family Trust (AUD Cash)")
-  account_type:   "bank"
-  bank_name:      "Superhero"
+Import rules — USD account:
+  IMPORT  — "You transferred AUD into USD"            → Credit / Income (USD received)
+  SKIP    — "You bought ..."                           → already in Transaction Statement
+  SKIP    — "You were paid ... dividend ..."           → already in Transaction Statement
+  SKIP    — Date == "TOTAL"                            → summary row
+
+Accounts:
+  AUD: account_number = {Account Number}-CASH-AUD, account_name = "{Account Name} (AUD Cash)"
+  USD: account_number = {Account Number}-CASH-USD, account_name = "{Account Name} (USD Cash)"
+  account_type = "bank", bank_name = "Superhero"
 
 Amounts:
   Debit column  → Expense (positive amount stored)
@@ -91,7 +100,7 @@ class SuperheroCashParser:
 
     @property
     def description(self) -> str:
-        return "Superhero Cash Statement — AUD cash account (deposits & FX transfers)"
+        return "Superhero Cash Statement — AUD or USD cash account (deposits & FX transfers)"
 
     @property
     def required_headers(self) -> list[str]:
@@ -117,15 +126,37 @@ class SuperheroCashParser:
             return True
         return False
 
+    @staticmethod
+    def _detect_currency(content: str) -> str:
+        """
+        Return 'AUD' or 'USD' by scanning the raw content.
+
+        AUD statements contain "deposited funds" rows (direct bank top-ups).
+        USD statements have no deposits — the FX transfer appears as a Credit.
+        """
+        lower = content.lower()
+        if "deposited funds" in lower:
+            return "AUD"
+        # No deposits found — check if the FX transfer row is a Credit (USD inflow)
+        for line in lower.splitlines():
+            if "transferred aud into usd" in line:
+                parts = line.split(",")
+                # CSV columns: date, description, debit, credit, balance
+                # Credit is index 3; non-empty means USD account
+                if len(parts) >= 4 and parts[3].strip().strip('"').replace("$", "").replace(",", "").strip():
+                    return "USD"
+        return "AUD"
+
     def parse(self, content: str) -> ParseResult:
         """
         Parse a Superhero Cash Statement into a ParseResult.
 
-        Pass 1: extract metadata (account number, account name).
+        Pass 1: extract metadata (account number, account name) and detect currency.
         Pass 2: find data header row, parse transaction rows.
         """
         lines = content.splitlines()
         errors: list[str] = []
+        currency = self._detect_currency(content)
 
         # ── Pass 1: metadata ──────────────────────────────────────────────────
         entity_name = ""
@@ -164,9 +195,10 @@ class SuperheroCashParser:
                 errors=["Could not find data header row in Superhero Cash Statement"],
             )
 
-        # Derive the AUD cash account number and name
-        cash_account_number = f"{account_number}-CASH-AUD"
-        cash_account_name = f"{account_name} (AUD Cash)" if account_name else cash_account_number
+        # Derive account number and name based on detected currency
+        cash_account_number = f"{account_number}-CASH-{currency}"
+        label = f"({currency} Cash)"
+        cash_account_name = f"{account_name} {label}" if account_name else cash_account_number
 
         # ── Pass 2: parse rows ────────────────────────────────────────────────
         data_section = "\n".join(lines[header_row_index:])
