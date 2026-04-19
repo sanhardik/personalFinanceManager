@@ -119,7 +119,7 @@ async def upload_csv(
     bank_parser = detect_parser(first_line) or detect_cash_parser(content)
     if bank_parser:
         # If a bank was selected, validate format matches
-        if bank and bank.lower() != "superhero" and bank_parser.bank_name.lower() != bank.lower():
+        if bank and bank.lower() not in ("superhero", "superhero cash") and bank_parser.bank_name.lower() != bank.lower():
             info = next((b for b in get_bank_info() if b["name"].lower() == bank.lower()), None)
             hint = (
                 f" Expected columns: {', '.join(info['required_headers'])}"

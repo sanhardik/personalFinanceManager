@@ -274,6 +274,19 @@ async def test_detect_cash_statement(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_upload_cash_with_bank_selection(client: AsyncClient):
+    """Uploading Cash Statement with bank='Superhero Cash' selected must not 422."""
+    content = _load_fixture("superhero_cash_sample.csv")
+    r = await client.post(
+        "/upload",
+        data={"bank": "Superhero Cash"},
+        files={"file": ("superhero_cash_sample.csv", io.BytesIO(content.encode()), "text/csv")},
+    )
+    assert r.status_code == 200
+    assert r.json()["inserted"] == 4
+
+
+@pytest.mark.asyncio
 async def test_cash_and_trade_uploads_separate_accounts(client: AsyncClient):
     """Cash Statement and Transaction Statement create two different accounts."""
     cash = _load_fixture("superhero_cash_sample.csv")
