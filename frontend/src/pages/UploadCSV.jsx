@@ -8,7 +8,7 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Upload, FileUp, CheckCircle2, AlertCircle, Loader2, X,
   ChevronLeft, FileText, Home, Building2, CreditCard, ArrowRight, TrendingUp,
@@ -290,10 +290,12 @@ function UploadResult({ result, onReset, onCategorise, onViewInvestments, isStoc
 
 export default function UploadCSV() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { refresh: refreshStats } = useTransactionStats();
   const [banks, setBanks] = useState([]);
   const [existingAccounts, setExistingAccounts] = useState([]);
   const [selectedBank, setSelectedBank] = useState(null);
+  const [preselectedAccount, setPreselectedAccount] = useState(null);
 
   // Step tracking: 'bank' | 'file' | 'assign' | 'done'
   const [step, setStep] = useState('bank');
@@ -308,10 +310,25 @@ export default function UploadCSV() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    const accountIdParam = searchParams.get('account_id');
     Promise.all([fetchSupportedBanks(), fetchAccountsSummary()])
-      .then(([b, a]) => { setBanks(b); setExistingAccounts(a); })
+      .then(([b, a]) => {
+        setBanks(b);
+        setExistingAccounts(a);
+        if (accountIdParam) {
+          const acc = a.find(x => x.id === parseInt(accountIdParam));
+          if (acc) {
+            const matchedBank = b.find(bk => bk.name.toLowerCase() === acc.bank_name?.toLowerCase());
+            if (matchedBank) {
+              setPreselectedAccount(acc);
+              setSelectedBank(matchedBank);
+              setStep('file');
+            }
+          }
+        }
+      })
       .catch(() => {});
-  }, []);
+  }, [searchParams]);
 
   const handleFile = useCallback(async (file) => {
     if (!file) return;
@@ -325,17 +342,36 @@ export default function UploadCSV() {
 
     try {
       const info = await detectCSV(file);
-      setDetectedInfo(info);
-      // Pre-fill assignments: auto-match detected accounts to existing accounts
-      // by account_number first, then by account_name (case-insensitive)
-      const init = {};
-      info.accounts.forEach(a => {
-        const match =
-          existingAccounts.find(ea => ea.account_number === a.account_number) ||
-          existingAccounts.find(
-            ea => ea.account_name?.toLowerCase() === a.account_name?.toLowerCase()
+
+      // If launched from Accounts page with a pre-selected account, validate bank match
+      if (preselectedAccount) {
+        const detectedBank = info.bank_name?.toLowerCase() ?? '';
+        const expectedBank = preselectedAccount.bank_name?.toLowerCase() ?? '';
+        const bankMatch = detectedBank.includes(expectedBank) || expectedBank.includes(detectedBank);
+        if (!bankMatch) {
+          setError(
+            `This CSV is from ${info.bank_name}, but "${preselectedAccount.account_name}" is a ${preselectedAccount.bank_name} account. Please upload the correct file.`
           );
-        init[a.account_number] = match ? String(match.id) : '';
+          setDetectedFile(null);
+          return;
+        }
+      }
+
+      setDetectedInfo(info);
+      // Pre-fill assignments: if pre-selected account, force-assign first detected account to it.
+      // Otherwise auto-match by account_number / account_name.
+      const init = {};
+      info.accounts.forEach((a, i) => {
+        if (preselectedAccount && i === 0) {
+          init[a.account_number] = String(preselectedAccount.id);
+        } else {
+          const match =
+            existingAccounts.find(ea => ea.account_number === a.account_number) ||
+            existingAccounts.find(
+              ea => ea.account_name?.toLowerCase() === a.account_name?.toLowerCase()
+            );
+          init[a.account_number] = match ? String(match.id) : '';
+        }
       });
       setAssignments(init);
       setStep('assign');
@@ -344,7 +380,7 @@ export default function UploadCSV() {
     } finally {
       setDetecting(false);
     }
-  }, [existingAccounts]);
+  }, [existingAccounts, preselectedAccount]);
 
   const handleUpload = async () => {
     if (!detectedFile) return;
@@ -380,10 +416,13 @@ export default function UploadCSV() {
     setResult(null);
     setError(null);
     setSelectedBank(null);
+    setPreselectedAccount(null);
     setDetectedFile(null);
     setDetectedInfo(null);
     setAssignments({});
     setStep('bank');
+    // Clear the account_id param so navigating away + back starts fresh
+    navigate('/upload', { replace: true });
   };
 
   const stepNum = step === 'bank' ? 1 : step === 'file' || step === 'assign' ? 2 : 3;
@@ -394,6 +433,11 @@ export default function UploadCSV() {
       <div className="flex items-center gap-2 mb-6">
         <Upload size={22} className="text-gray-700" />
         <h2 className="text-xl font-semibold text-gray-800">Upload CSV</h2>
+        {preselectedAccount && (
+          <span className="ml-2 px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-full border border-blue-200">
+            → {preselectedAccount.account_name}
+          </span>
+        )}
       </div>
 
       {step === 'done' && result ? (

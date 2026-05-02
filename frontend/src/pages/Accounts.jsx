@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Landmark, Plus, Edit2, Check, X, Loader2,
-  CreditCard, Home, Building2, Link2, ArrowRight, Percent, Calendar, Trash2,
+  CreditCard, Home, Building2, Link2, ArrowRight, Percent, Calendar, Trash2, Upload,
 } from 'lucide-react';
 import { fetchAccountsSummary, createAccount, updateAccount } from '../api/accounts';
 import { fetchAssets } from '../api/assets';
@@ -69,6 +70,7 @@ function LoanFields({ data, onChange }) {
 }
 
 export default function Accounts() {
+  const navigate = useNavigate();
   const [accounts, setAccounts] = useState([]);
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -515,6 +517,18 @@ export default function Accounts() {
                         <div className="mt-2 pt-2 border-t border-gray-100 flex items-center gap-1.5 text-xs text-gray-400">
                           <Building2 size={12} />
                           <span className="font-medium text-gray-600">{linkedAsset.asset_name}</span>
+                        </div>
+                      )}
+
+                      {acc.account_type !== 'investment' && (
+                        <div className="mt-3 pt-2 border-t border-gray-100">
+                          <button
+                            onClick={() => navigate(`/upload?account_id=${acc.id}`)}
+                            className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2 py-1 rounded-lg transition-colors"
+                          >
+                            <Upload size={12} />
+                            Upload CSV
+                          </button>
                         </div>
                       )}
                     </>

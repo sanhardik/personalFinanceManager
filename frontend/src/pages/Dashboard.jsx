@@ -178,12 +178,12 @@ export default function Dashboard() {
               />
             </div>
           </div>
-          {stats.uncategorised > 0 && (
+          {summary?.uncategorised_count > 0 && (
             <button
               onClick={openDrawer}
               className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded-lg whitespace-nowrap hover:bg-orange-100 transition-colors"
             >
-              {stats.uncategorised} uncategorised
+              {summary.uncategorised_count} uncategorised
             </button>
           )}
         </div>
