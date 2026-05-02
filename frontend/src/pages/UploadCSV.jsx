@@ -392,7 +392,10 @@ export default function UploadCSV() {
         <UploadResult
           result={result}
           onReset={reset}
-          onCategorise={() => navigate('/transactions')}
+          onCategorise={() => {
+            const id = result?.account_ids?.[0];
+            navigate(id ? `/transactions?account_id=${id}` : '/transactions');
+          }}
           onViewInvestments={() => navigate('/investments')}
           isStock={selectedBank?.platform_type === 'stock'}
         />

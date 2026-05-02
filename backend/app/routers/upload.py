@@ -141,6 +141,7 @@ async def upload_csv(
         return UploadResponse(
             bank_name=result.bank_name,
             accounts_found=result.accounts_found,
+            account_ids=result.account_ids,
             total_rows=result.total_rows,
             inserted=result.inserted,
             duplicates=result.duplicates,
@@ -158,6 +159,7 @@ async def upload_csv(
         return UploadResponse(
             bank_name=result.platform_name,
             accounts_found=[result.account_number] if result.account_number else [],
+            account_ids=[result.account_id] if result.account_id else [],
             total_rows=result.total_rows,
             inserted=result.inserted,
             duplicates=result.duplicates,

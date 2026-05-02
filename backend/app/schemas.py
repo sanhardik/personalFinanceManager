@@ -421,7 +421,34 @@ class UploadResponse(BaseModel):
     """Response from POST /upload."""
     bank_name: str
     accounts_found: list[str]
+    account_ids: list[int] = []
     total_rows: int
     inserted: int
     duplicates: int
     errors: list[str]
+
+
+# ── Net Worth Journey ────────────────────────────────────────
+
+class NetWorthPoint(BaseModel):
+    """A single month in the net worth timeline."""
+    month: str   # YYYY-MM
+    cash: float
+    investments: float
+    properties: float
+    loans: float
+    net_worth: float
+
+
+class NetWorthMilestone(BaseModel):
+    """An auto-detected event marker on the net worth timeline."""
+    month: str   # YYYY-MM
+    type: str    # "journey_start" | "net_worth_milestone" | "property_purchase" | "investment_start"
+    label: str
+    amount: float | None = None
+
+
+class NetWorthJourneyResponse(BaseModel):
+    """Response for GET /networth/journey."""
+    timeline: list[NetWorthPoint]
+    milestones: list[NetWorthMilestone]

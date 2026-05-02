@@ -30,6 +30,7 @@ class UploadResult:
 
     bank_name: str
     accounts_found: list[str]
+    account_ids: list[int]
     total_rows: int
     inserted: int
     duplicates: int
@@ -52,6 +53,7 @@ async def _process_parse_result(
         return UploadResult(
             bank_name=result.bank_name,
             accounts_found=result.accounts_found,
+            account_ids=[],
             total_rows=result.row_count,
             inserted=0,
             duplicates=0,
@@ -132,6 +134,7 @@ async def _process_parse_result(
     return UploadResult(
         bank_name=result.bank_name,
         accounts_found=result.accounts_found,
+        account_ids=list(dict.fromkeys(account_map.values())),
         total_rows=result.row_count,
         inserted=inserted,
         duplicates=duplicates,
