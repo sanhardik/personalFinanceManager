@@ -23,8 +23,9 @@ from app.database import get_db
 from app.models import Account, Asset, Category, Transaction
 from app.utils.db_compat import month_col
 from app.schemas import AssetResponse, LoanHistoryRow, LoanSummaryResponse
+from app.services.auth import get_current_user
 
-router = APIRouter(prefix="/loans", tags=["loans"])
+router = APIRouter(prefix="/loans", tags=["loans"], dependencies=[Depends(get_current_user)])
 
 # Categories used to identify interest and payment transactions on a loan account
 INTEREST_CATEGORY = "Home Loan Interest"

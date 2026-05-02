@@ -18,10 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import Account, Category, Rule, SuggestedRule, Transaction
 from app.schemas import BulkCategoriseRequest, BulkCategoriseResponse, TransactionPatchResponse, TransactionResponse, TransactionUpdate
+from app.services.auth import get_current_user
 from app.services.categoriser import TRANSFER_CATEGORY_NAMES, _link_counterpart
 from app.services.pattern_extractor import AUTO_PROMOTE_THRESHOLD, extract_merchant_pattern
 
-router = APIRouter(prefix="/transactions", tags=["transactions"])
+router = APIRouter(prefix="/transactions", tags=["transactions"], dependencies=[Depends(get_current_user)])
 
 
 def _tx_to_response(tx: Transaction) -> dict:

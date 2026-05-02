@@ -134,6 +134,7 @@ async def db_session(test_session_factory):
 async def truncate_data(test_session_factory, setup_test_database):
     """Truncate transactions, accounts, rules, and suggested_rules before each test."""
     async with test_session_factory() as session:
+        await session.execute(text("DELETE FROM users"))
         await session.execute(text("DELETE FROM suggested_rules"))
         await session.execute(text("DELETE FROM stock_valuations"))
         await session.execute(text("DELETE FROM stock_trades"))
@@ -150,8 +151,32 @@ async def client(test_session_factory, setup_test_database):
     Async HTTP test client connected to the real test MariaDB.
 
     Overrides the app's get_db dependency so all routes use the test DB.
-    The lifespan event is handled by setup_test_database fixture.
+    Auto-creates a test user and sets the Bearer token on all requests so
+    all existing tests continue to work without modification.
     """
+    from app.database import get_db
+    from app.main import app
+
+    async def override_get_db():
+        async with test_session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        resp = await ac.post("/auth/setup", json={"username": "testuser", "password": "TestPass123!"})
+        if resp.status_code == 200:
+            token = resp.json()["access_token"]
+            ac.headers.update({"Authorization": f"Bearer {token}"})
+        yield ac
+
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def client_no_auth(test_session_factory, setup_test_database):
+    """Async HTTP test client with NO auth headers — for testing unauthenticated requests."""
     from app.database import get_db
     from app.main import app
 

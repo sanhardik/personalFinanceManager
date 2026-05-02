@@ -15,8 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import Account, StockTrade, StockValuation, Transaction
 from app.schemas import AccountCreate, AccountResponse, AccountUpdate
+from app.services.auth import get_current_user
 
-router = APIRouter(prefix="/accounts", tags=["accounts"])
+router = APIRouter(prefix="/accounts", tags=["accounts"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("", response_model=list[AccountResponse])

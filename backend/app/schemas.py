@@ -7,9 +7,42 @@ Naming convention:
 - *Response: fields returned to the frontend
 """
 
+import re
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+# ── Auth ─────────────────────────────────────────────────────
+
+class UserCreate(BaseModel):
+    username: str = Field(..., min_length=1, max_length=100)
+    password: str
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_strength(cls, v: str) -> str:
+        errors = []
+        if len(v) < 12:
+            errors.append("at least 12 characters")
+        if not re.search(r"[A-Z]", v):
+            errors.append("at least 1 uppercase letter")
+        if not re.search(r"\d", v):
+            errors.append("at least 1 digit")
+        if not re.search(r"[^A-Za-z0-9]", v):
+            errors.append("at least 1 special character")
+        if errors:
+            raise ValueError("Password must contain: " + ", ".join(errors))
+        return v
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class AuthStatusResponse(BaseModel):
+    is_configured: bool
 
 
 # ── Assets ──────────────────────────────────────────────────

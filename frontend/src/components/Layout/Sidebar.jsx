@@ -9,7 +9,7 @@
  * Navigation items are defined in the navItems array — add new pages here.
  */
 
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   ArrowLeftRight,
@@ -21,9 +21,11 @@ import {
   TrendingUp,
   Home,
   Building2,
+  LogOut,
 } from 'lucide-react';
 import { useTransactionStats } from '../../contexts/TransactionStatsContext';
 import { useCategoriseDrawer } from '../../contexts/CategoriseDrawerContext';
+import { clearToken } from '../../utils/auth';
 
 /**
  * Navigation items configuration.
@@ -46,6 +48,7 @@ const navItems = [
 export default function Sidebar() {
   const { stats } = useTransactionStats();
   const { open } = useCategoriseDrawer();
+  const navigate = useNavigate();
 
   return (
     <aside className="w-60 bg-white border-r border-gray-200 min-h-screen flex flex-col">
@@ -88,6 +91,16 @@ export default function Sidebar() {
           ))}
         </ul>
       </nav>
+
+      <div className="p-3 border-t border-gray-200">
+        <button
+          onClick={() => { clearToken(); navigate('/login'); }}
+          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 w-full transition-colors"
+        >
+          <LogOut size={18} />
+          Logout
+        </button>
+      </div>
     </aside>
   );
 }

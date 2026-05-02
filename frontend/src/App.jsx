@@ -10,6 +10,7 @@
 
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout/Layout';
+import AuthGuard from './components/AuthGuard';
 import { TransactionStatsProvider } from './contexts/TransactionStatsContext';
 import { CategoriseDrawerProvider } from './contexts/CategoriseDrawerContext';
 import { CategoriseDrawer } from './components/CategoriseDrawer';
@@ -23,6 +24,8 @@ import Investments from './pages/Investments';
 import Loans from './pages/Loans';
 import Assets from './pages/Assets';
 import SettingsPage from './pages/SettingsPage';
+import Login from './pages/Login';
+import Setup from './pages/Setup';
 
 function App() {
   return (
@@ -30,8 +33,10 @@ function App() {
     <CategoriseDrawerProvider>
     <BrowserRouter>
       <Routes>
-        {/* All pages share the Layout (sidebar + header) */}
-        <Route path="/" element={<Layout />}>
+        <Route path="/login" element={<Login />} />
+        <Route path="/setup" element={<Setup />} />
+        {/* All pages share the Layout (sidebar + header) — protected by AuthGuard */}
+        <Route path="/" element={<AuthGuard><Layout /></AuthGuard>}>
           <Route index element={<Dashboard />} />
           <Route path="accounts" element={<Accounts />} />
           <Route path="transactions" element={<Transactions />} />

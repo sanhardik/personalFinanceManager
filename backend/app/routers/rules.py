@@ -17,9 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import Account, Category, Rule, SuggestedRule, Transaction
 from app.schemas import AffectedTransaction, RuleAffectedResponse, RuleCreate, RuleResponse, RuleUpdate, SuggestedRuleResponse
+from app.services.auth import get_current_user
 from app.services.categoriser import TRANSFER_CATEGORY_NAMES, _extract_account_suffixes, _link_counterpart, _match_account, apply_rules_to_transactions
 
-router = APIRouter(prefix="/rules", tags=["rules"])
+router = APIRouter(prefix="/rules", tags=["rules"], dependencies=[Depends(get_current_user)])
 
 
 def _rule_to_response(rule: Rule) -> RuleResponse:

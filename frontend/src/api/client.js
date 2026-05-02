@@ -1,21 +1,6 @@
-/**
- * Axios API client for the Personal Finance Manager backend.
- *
- * All API calls go through this client, which:
- * - Proxies requests via Vite's dev server (/api → localhost:8000)
- * - Sets a 10-second timeout on all requests
- * - Logs errors to the console via a response interceptor
- *
- * Usage in other modules:
- *   import api from './client';
- *   const response = await api.get('/health');
- */
-
 import axios from 'axios';
+import { clearToken, getToken } from '../utils/auth';
 
-// Create a shared Axios instance with default config.
-// In dev, VITE_API_BASE_URL is unset → uses '/api' → Vite proxy strips it.
-// In production builds (VITE_API_BASE_URL=''), calls go to the same origin.
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL ?? '/api',
   timeout: 10000,
@@ -24,11 +9,19 @@ const api = axios.create({
   },
 });
 
-// Response interceptor — logs API errors for debugging.
-// Passes errors through so calling code can handle them too.
+api.interceptors.request.use((config) => {
+  const token = getToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.status === 401 && !error.config?.url?.startsWith('/auth')) {
+      clearToken();
+      window.location.href = '/login';
+    }
     console.error('API Error:', error.response?.data || error.message);
     return Promise.reject(error);
   }

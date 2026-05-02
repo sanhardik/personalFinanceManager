@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = True
 
+    # Auth
+    JWT_SECRET: str = "change-me-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_DAYS: int = 30
+
     # CORS
     FRONTEND_URL: str = "http://localhost:5173"
 

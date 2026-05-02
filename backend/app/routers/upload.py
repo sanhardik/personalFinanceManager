@@ -13,9 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.parsers.registry import detect_cash_parser, detect_parser, detect_stock_parser, get_all_platform_info, get_bank_info, get_supported_banks
 from app.schemas import UploadResponse
+from app.services.auth import get_current_user
 from app.services.upload import process_csv_upload, process_stock_csv_upload
 
-router = APIRouter(prefix="/upload", tags=["upload"])
+router = APIRouter(prefix="/upload", tags=["upload"], dependencies=[Depends(get_current_user)])
 
 
 async def _read_csv(file: UploadFile) -> str:

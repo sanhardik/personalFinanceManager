@@ -16,8 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import Account, Asset
 from app.schemas import AssetCreate, AssetResponse, AssetUpdate
+from app.services.auth import get_current_user
 
-router = APIRouter(prefix="/assets", tags=["assets"])
+router = APIRouter(prefix="/assets", tags=["assets"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("", response_model=list[AssetResponse])

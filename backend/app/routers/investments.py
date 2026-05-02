@@ -27,8 +27,9 @@ from app.schemas import (
     PerformanceRow,
     StockTradeResponse,
 )
+from app.services.auth import get_current_user
 
-router = APIRouter(prefix="/investments", tags=["investments"])
+router = APIRouter(prefix="/investments", tags=["investments"], dependencies=[Depends(get_current_user)])
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

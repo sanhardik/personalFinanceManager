@@ -36,10 +36,12 @@ import app.models  # noqa: F401
 
 from app.routers.accounts import router as accounts_router
 from app.routers.assets import router as assets_router
+from app.routers.auth import router as auth_router
 from app.routers.categories import router as categories_router
 from app.routers.dashboard import router as dashboard_router
 from app.routers.investments import router as investments_router
 from app.routers.loans import router as loans_router
+from app.routers.networth import router as networth_router
 from app.routers.rules import router as rules_router
 from app.routers.transactions import router as transactions_router
 from app.routers.upload import router as upload_router
@@ -201,12 +203,14 @@ app.add_middleware(
 )
 
 # ── Register routers ─────────────────────────────────────────
+app.include_router(auth_router)
 app.include_router(accounts_router)
 app.include_router(assets_router)
 app.include_router(categories_router)
 app.include_router(dashboard_router)
 app.include_router(investments_router)
 app.include_router(loans_router)
+app.include_router(networth_router)
 app.include_router(rules_router)
 app.include_router(transactions_router)
 app.include_router(upload_router)

@@ -22,8 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import Category
 from app.schemas import CategoryCreate, CategoryResponse, CategoryUpdate
+from app.services.auth import get_current_user
 
-router = APIRouter(prefix="/categories", tags=["categories"])
+router = APIRouter(prefix="/categories", tags=["categories"], dependencies=[Depends(get_current_user)])
 
 
 def _cat_to_response(cat: Category) -> CategoryResponse:
