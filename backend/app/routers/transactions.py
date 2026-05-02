@@ -11,7 +11,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, case, asc, desc, or_
+from sqlalchemy import select, func, case, asc, desc, or_, literal
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -363,10 +363,11 @@ async def patch_transaction(
     if body.category_id is not None:
         pattern = extract_merchant_pattern(tx.tx_desc)
         if pattern:
-            # Check if an active rule already covers this pattern → no need to suggest
+            # Check if any active rule with the same category already matches
+            # this transaction description as a substring (same logic as categoriser).
             existing_rule_result = await db.execute(
                 select(Rule).where(
-                    Rule.pattern == pattern,
+                    literal(tx.tx_desc).ilike(func.concat("%", Rule.pattern, "%")),
                     Rule.category_id == body.category_id,
                     Rule.is_active == True,
                 )
@@ -375,14 +376,28 @@ async def patch_transaction(
 
             if not has_rule:
                 # Find an existing pending suggestion for same pattern+category
+                # (case-insensitive to avoid creating near-duplicates)
                 existing_result = await db.execute(
                     select(SuggestedRule).where(
-                        SuggestedRule.pattern == pattern,
+                        func.lower(SuggestedRule.pattern) == pattern.lower(),
                         SuggestedRule.category_id == body.category_id,
                         SuggestedRule.status == "pending",
                     )
                 )
                 suggestion = existing_result.scalar_one_or_none()
+
+                # Ambiguity guard: if other already-categorised transactions whose
+                # description matches this pattern were categorised with a DIFFERENT
+                # category, the merchant is ambiguous — skip suggestion creation.
+                conflict_result = await db.execute(
+                    select(func.count(Transaction.id)).where(
+                        Transaction.tx_desc.ilike(f"%{pattern}%"),
+                        Transaction.is_categorised == True,
+                        Transaction.category_id != body.category_id,
+                        Transaction.id != tx_id,
+                    )
+                )
+                conflict_count = conflict_result.scalar() or 0
 
                 auto_promoted = False
                 if suggestion:
@@ -410,16 +425,18 @@ async def patch_transaction(
                         auto_promoted = True
 
                     await db.commit()
-                    rule_suggestion = {
-                        "suggestion_id": suggestion.id,
-                        "pattern": pattern,
-                        "category_id": body.category_id,
-                        "category_name": tx.category.name if tx.category else "",
-                        "hit_count": suggestion.hit_count,
-                        "auto_promoted": auto_promoted,
-                    }
-                else:
-                    # Create new suggestion
+                    # Only surface the suggestion when there's no ambiguity
+                    if conflict_count == 0:
+                        rule_suggestion = {
+                            "suggestion_id": suggestion.id,
+                            "pattern": pattern,
+                            "category_id": body.category_id,
+                            "category_name": tx.category.name if tx.category else "",
+                            "hit_count": suggestion.hit_count,
+                            "auto_promoted": auto_promoted,
+                        }
+                elif conflict_count == 0:
+                    # Only create a new suggestion when the pattern is unambiguous
                     new_suggestion = SuggestedRule(
                         pattern=pattern,
                         category_id=body.category_id,
