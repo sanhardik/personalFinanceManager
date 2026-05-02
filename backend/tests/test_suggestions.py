@@ -34,7 +34,8 @@ def test_extract_merchant_netflix():
 
 
 def test_extract_merchant_spaceship():
-    assert extract_merchant_pattern("SPACESHIP INVEST PTY LTD") == "SPACESHIP"
+    # INVEST is a valid second token; PTY is in the skip list and stops collection
+    assert extract_merchant_pattern("SPACESHIP INVEST PTY LTD") == "SPACESHIP INVEST"
 
 
 def test_extract_merchant_skips_boilerplate():
@@ -49,6 +50,26 @@ def test_extract_merchant_short_token():
 
 def test_extract_merchant_none_for_empty():
     assert extract_merchant_pattern("") is None
+
+
+def test_extract_merchant_two_words():
+    # Both words are meaningful; stops at 2 tokens
+    assert extract_merchant_pattern("BUNNINGS WAREHOUSE AUBURN 123") == "BUNNINGS WAREHOUSE"
+
+
+def test_extract_merchant_second_token_is_skip():
+    # STORE is in skip list — stops after first token
+    assert extract_merchant_pattern("OFFICEWORKS STORE CARINDALE") == "OFFICEWORKS"
+
+
+def test_extract_merchant_domain_suffix_skipped():
+    # COM is in skip list — NET.COM strips to NETFLIX then COM stops collection
+    assert extract_merchant_pattern("NETFLIX.COM 800-599-1743 CA") == "NETFLIX"
+
+
+def test_extract_merchant_stops_at_number():
+    # Purely-numeric token stops collection after first meaningful word
+    assert extract_merchant_pattern("WOOLWORTHS 1234 CHATSWOOD") == "WOOLWORTHS"
 
 
 # ── GET /rules/suggestions ───────────────────────────────────
