@@ -13,7 +13,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Account, Transaction
+from app.models import Account, StockTrade, StockValuation, Transaction
 from app.schemas import AccountCreate, AccountResponse, AccountUpdate
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
@@ -190,3 +190,31 @@ async def update_account(
     await db.commit()
     await db.refresh(account)
     return account
+
+
+@router.delete("/{account_id}", status_code=204)
+async def delete_account(
+    account_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Delete an account and all associated data (transactions, stock trades, valuations).
+    Returns 204 No Content on success.
+    """
+    result = await db.execute(select(Account).where(Account.id == account_id))
+    account = result.scalar_one_or_none()
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    # Delete child records in FK-safe order
+    await db.execute(
+        StockValuation.__table__.delete().where(StockValuation.account_id == account_id)
+    )
+    await db.execute(
+        StockTrade.__table__.delete().where(StockTrade.account_id == account_id)
+    )
+    await db.execute(
+        Transaction.__table__.delete().where(Transaction.account_id == account_id)
+    )
+    await db.delete(account)
+    await db.commit()

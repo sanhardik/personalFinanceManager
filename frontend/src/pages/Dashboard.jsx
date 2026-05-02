@@ -13,6 +13,7 @@ import {
 } from '../api/dashboard';
 import { useTransactionStats } from '../contexts/TransactionStatsContext';
 import { useCategoriseDrawer } from '../contexts/CategoriseDrawerContext';
+import DateRangePicker from '../components/DateRangePicker';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -152,22 +153,11 @@ export default function Dashboard() {
           <LayoutDashboard size={22} className="text-gray-700" />
           <h2 className="text-xl font-semibold text-gray-800">Dashboard</h2>
         </div>
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-gray-500">From</span>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={e => setDateFrom(e.target.value)}
-            className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <span className="text-gray-500">to</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={e => setDateTo(e.target.value)}
-            className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
+        <DateRangePicker
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onChange={(from, to) => { setDateFrom(from); setDateTo(to); }}
+        />
       </div>
 
       {error && (

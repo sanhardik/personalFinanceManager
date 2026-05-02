@@ -1,0 +1,19 @@
+Entity Name,Sanghavi Ventures Pty Ltd
+Account Name,Sanghavi Family Trust
+Account Number,C6490998
+Report Start Date,01/07/2025
+Report End Date,19/04/2026
+Report Creation Date,19/04/2026 21:08:51
+
+
+0
+"Date","Description","Debit ","Credit ","Balance "
+"01/07/2025","You deposited funds into your account","","$300.00","$1,160.28"
+"02/07/2025","You bought 2 Perth Mint Gold shares","-$101.02","","$1,059.26"
+"02/07/2025","You bought 2 S&P 500 ETF shares","-$125.46","","$933.80"
+"14/07/2025","You were paid [income subtype] dividend from S&P 500 ETF","","$43.26","$1,049.42"
+"22/07/2025","You deposited funds into your account","","$300.00","$1,424.37"
+"23/07/2025","You transferred AUD into USD","-$1,100.00","","$91.91"
+"06/08/2025","You ught 2 S&P 500 ETF shares","-$129.48","","$228.40"
+"12/08/2025","You deposited funds into your account","","$300.00","$528.40"
+"TOTAL","","-$13,324.11","$12,904.92",""

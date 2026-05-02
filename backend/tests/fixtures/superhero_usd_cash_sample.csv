@@ -1,0 +1,16 @@
+Entity Name,Sanghavi Ventures Pty Ltd
+Account Name,Sanghavi Family Trust
+Account Number,C6490998
+Report Start Date,01/07/2025
+Report End Date,19/04/2026
+Report Creation Date,19/04/2026 21:38:32
+
+
+0
+"Date","Description","Debit ","Credit ","Balance "
+"07/07/2025","You were paid [income subtype] dividend from NVIDIA Corporation","","$0.45","$4.99"
+"23/07/2025","You transferred AUD into USD","","$715.85","$720.84"
+"23/07/2025","You bought 1 Meta Platforms Inc shares","-$701.99","","$18.85"
+"06/10/2025","You transferred AUD into USD","","$452.98","$472.98"
+"10/11/2025","You were paid [income subtype] dividend from ASML Holding NV","","$0.34","$87.38"
+"TOTAL","","-$1,689.93","$1,690.34",""
