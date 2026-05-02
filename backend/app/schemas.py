@@ -353,13 +353,102 @@ class LoanHistoryRow(BaseModel):
     balance: float | None                    # End-of-month balance (negative = owed)
 
 
+# ── Stock Trades & Holdings ───────────────────────────────────
+
+class StockTradeResponse(BaseModel):
+    """A single stock trade returned from GET endpoints."""
+    id: int
+    account_id: int
+    trade_date: datetime
+    settlement_date: datetime | None
+    security_name: str
+    security_code: str
+    trade_type: str
+    quantity: float | None
+    avg_price: float | None
+    net_amount: float
+    brokerage: float
+    gst: float
+    tax: float
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class HoldingRow(BaseModel):
+    """Aggregated holdings row for a single security in a brokerage account."""
+    security_code: str
+    security_name: str
+    quantity_held: float
+    avg_cost_per_unit: float | None
+    cost_basis: float
+    current_price: float | None
+    current_value: float | None
+    unrealised_gain: float | None
+    unrealised_gain_pct: float | None
+    total_dividends: float
+    total_gain: float | None
+    total_return_pct: float | None
+    arr: float | None
+    arr_short_hold: bool
+    first_buy_date: date | None
+    brokerage_total: float
+
+
+class DividendRow(BaseModel):
+    """Monthly dividend total per security."""
+    month: str
+    security_code: str
+    security_name: str
+    amount: float
+
+
+class PerformanceRow(BaseModel):
+    """Monthly portfolio cumulative cost basis snapshot."""
+    month: str
+    cost_basis: float
+    portfolio_value: float | None
+
+
+class HoldingPriceUpdate(BaseModel):
+    """PATCH /investments/holdings/{account_id}/{security_code}/price"""
+    price: float = Field(..., gt=0)
+
+
 # ── Upload ───────────────────────────────────────────────────
 
 class UploadResponse(BaseModel):
     """Response from POST /upload."""
     bank_name: str
     accounts_found: list[str]
+    account_ids: list[int] = []
     total_rows: int
     inserted: int
     duplicates: int
     errors: list[str]
+
+
+# ── Net Worth Journey ────────────────────────────────────────
+
+class NetWorthPoint(BaseModel):
+    """A single month in the net worth timeline."""
+    month: str   # YYYY-MM
+    cash: float
+    investments: float
+    properties: float
+    loans: float
+    net_worth: float
+
+
+class NetWorthMilestone(BaseModel):
+    """An auto-detected event marker on the net worth timeline."""
+    month: str   # YYYY-MM
+    type: str    # "journey_start" | "net_worth_milestone" | "property_purchase" | "investment_start"
+    label: str
+    amount: float | None = None
+
+
+class NetWorthJourneyResponse(BaseModel):
+    """Response for GET /networth/journey."""
+    timeline: list[NetWorthPoint]
+    milestones: list[NetWorthMilestone]

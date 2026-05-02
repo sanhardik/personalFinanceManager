@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ArrowLeftRight, Search, ChevronLeft, ChevronRight, Loader2, CheckCircle2, X, Sparkles, ArrowRight, Check, Link2 } from 'lucide-react';
 import { fetchTransactions, patchTransaction, bulkCategorise, fetchUncategorisedGroups } from '../api/transactions';
+import DateRangePicker from '../components/DateRangePicker';
 import { useTransactionStats } from '../contexts/TransactionStatsContext';
 import { fetchAccounts } from '../api/accounts';
 import { fetchCategories } from '../api/categories';
@@ -22,18 +24,21 @@ function nudgeCopy(n) {
 
 export default function Transactions() {
   const { stats, refresh: refreshStats } = useTransactionStats();
+  const [searchParams] = useSearchParams();
   const [transactions, setTransactions] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState({ total: 0, page: 1, pages: 0, per_page: 50 });
 
-  // Filters
-  const [accountId, setAccountId] = useState('');
+  // Filters — seed account_id from URL param (e.g. from "Categorise now" on upload)
+  const [accountId, setAccountId] = useState(() => searchParams.get('account_id') || '');
   const [txType, setTxType] = useState('');
   const [search, setSearch] = useState('');
   const [searchDebounce, setSearchDebounce] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   // Inbox mode
   const [inboxMode, setInboxMode] = useState(false);
@@ -79,6 +84,8 @@ export default function Transactions() {
         search: searchDebounce || undefined,
         categorised: categoryFilter === 'uncategorised' ? false : undefined,
         categoryId: categoryFilter && categoryFilter !== 'uncategorised' ? parseInt(categoryFilter) : undefined,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
         sortBy: sort.column,
         sortDir: sort.dir,
         uncategorisedFirst: !userSorted,
@@ -91,7 +98,7 @@ export default function Transactions() {
     } finally {
       setLoading(false);
     }
-  }, [accountId, txType, searchDebounce, categoryFilter, sort, userSorted]);
+  }, [accountId, txType, searchDebounce, categoryFilter, dateFrom, dateTo, sort, userSorted]);
 
   useEffect(() => { loadTransactions(1); }, [loadTransactions]);
 
@@ -343,6 +350,15 @@ export default function Transactions() {
             {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         )}
+      </div>
+
+      {/* Date range */}
+      <div className="mb-4">
+        <DateRangePicker
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onChange={(from, to) => { setDateFrom(from); setDateTo(to); }}
+        />
       </div>
 
       {/* ── INBOX MODE ─────────────────────────────────────────────── */}

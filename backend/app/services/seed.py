@@ -59,6 +59,9 @@ DEFAULT_CATEGORIES: list[tuple[str, str, str, str]] = [
     ("Refund", "Income", "RotateCcw", "#10b981"),
     ("Transfer In", "Income", "ArrowDownLeft", "#64748b"),
     ("Other Income", "Income", "MoreHorizontal", "#6b7280"),
+    # ── Stock investment categories ──
+    ("Stock Purchase", "Expense", "TrendingUp", "#6366f1"),
+    ("Dividend Income", "Income", "TrendingUp", "#22c55e"),
 ]
 
 

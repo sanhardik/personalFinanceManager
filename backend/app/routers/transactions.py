@@ -8,7 +8,7 @@ Routes:
 
 import json
 from collections import defaultdict
-from datetime import timedelta
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, case, asc, desc, or_
@@ -44,6 +44,8 @@ async def list_transactions(
     search: str | None = Query(default=None, description="Search in description"),
     categorised: bool | None = Query(default=None, description="Filter by categorised status"),
     category_id: int | None = Query(default=None, description="Filter by specific category"),
+    date_from: date | None = Query(default=None, description="Filter from date (inclusive) YYYY-MM-DD"),
+    date_to: date | None = Query(default=None, description="Filter to date (inclusive) YYYY-MM-DD"),
     sort_by: str = Query(default="tx_date", pattern="^(tx_date|tx_amount|tx_desc|tx_type|category)$"),
     sort_dir: str = Query(default="desc", pattern="^(asc|desc)$"),
     uncategorised_first: bool = Query(default=True, description="Pin uncategorised rows to top"),
@@ -82,6 +84,12 @@ async def list_transactions(
     if category_id is not None:
         stmt = stmt.where(Transaction.category_id == category_id)
         count_stmt = count_stmt.where(Transaction.category_id == category_id)
+    if date_from is not None:
+        stmt = stmt.where(Transaction.tx_date >= date_from)
+        count_stmt = count_stmt.where(Transaction.tx_date >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(Transaction.tx_date <= date_to)
+        count_stmt = count_stmt.where(Transaction.tx_date <= date_to)
 
     total_result = await db.execute(count_stmt)
     total = total_result.scalar() or 0

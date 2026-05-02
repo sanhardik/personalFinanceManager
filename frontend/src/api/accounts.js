@@ -19,3 +19,7 @@ export async function updateAccount(id, data) {
   const response = await api.put(`/accounts/${id}`, data);
   return response.data;
 }
+
+export async function deleteAccount(id) {
+  await api.delete(`/accounts/${id}`);
+}
