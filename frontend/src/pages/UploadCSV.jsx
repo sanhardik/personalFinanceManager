@@ -326,9 +326,17 @@ export default function UploadCSV() {
     try {
       const info = await detectCSV(file);
       setDetectedInfo(info);
-      // Pre-fill assignments: empty (create new) for all detected accounts
+      // Pre-fill assignments: auto-match detected accounts to existing accounts
+      // by account_number first, then by account_name (case-insensitive)
       const init = {};
-      info.accounts.forEach(a => { init[a.account_number] = ''; });
+      info.accounts.forEach(a => {
+        const match =
+          existingAccounts.find(ea => ea.account_number === a.account_number) ||
+          existingAccounts.find(
+            ea => ea.account_name?.toLowerCase() === a.account_name?.toLowerCase()
+          );
+        init[a.account_number] = match ? String(match.id) : '';
+      });
       setAssignments(init);
       setStep('assign');
     } catch (err) {
@@ -336,7 +344,7 @@ export default function UploadCSV() {
     } finally {
       setDetecting(false);
     }
-  }, []);
+  }, [existingAccounts]);
 
   const handleUpload = async () => {
     if (!detectedFile) return;
