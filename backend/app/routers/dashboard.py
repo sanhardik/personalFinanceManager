@@ -6,14 +6,14 @@ Routes:
   GET /dashboard/monthly       — month-by-month breakdown
   GET /dashboard/by-category   — spending or income by category
 """
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Category, Transaction
+from app.models import Account, Category, Transaction
 from app.services.auth import get_current_user
 from app.utils.db_compat import month_col
 
@@ -134,4 +134,38 @@ async def get_by_category(
             "amount": float(row.amount or 0),
         }
         for row in result.all()
+    ]
+
+
+@router.get("/upload-reminders")
+async def get_upload_reminders(db: AsyncSession = Depends(get_db)):
+    """
+    Return all active non-investment accounts with their last upload date.
+
+    Excludes investment accounts (stock CSV uploads are tracked separately).
+    The frontend uses this to warn when an account hasn't been uploaded in 7+ days.
+    """
+    result = await db.execute(
+        select(Account)
+        .where(
+            Account.is_active == True,
+            Account.account_type != "investment",
+        )
+        .order_by(Account.bank_name, Account.account_name)
+    )
+    accounts = result.scalars().all()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    return [
+        {
+            "id": acc.id,
+            "account_name": acc.account_name,
+            "bank_name": acc.bank_name,
+            "account_type": acc.account_type,
+            "last_upload_at": acc.last_upload_at.isoformat() if acc.last_upload_at else None,
+            "days_since_upload": (
+                (now - acc.last_upload_at).days if acc.last_upload_at else None
+            ),
+        }
+        for acc in accounts
     ]

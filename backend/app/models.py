@@ -134,6 +134,8 @@ class Account(Base):
         Integer, ForeignKey("accounts.id"), nullable=True
     )  # Future: linked offset account
 
+    last_upload_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )

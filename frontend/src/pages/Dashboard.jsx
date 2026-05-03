@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import {
   LayoutDashboard, TrendingUp, TrendingDown, PiggyBank, AlertCircle, Loader2,
+  Upload, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -10,6 +12,7 @@ import {
   fetchDashboardSummary,
   fetchDashboardMonthly,
   fetchDashboardByCategory,
+  fetchUploadReminders,
 } from '../api/dashboard';
 import { useTransactionStats } from '../contexts/TransactionStatsContext';
 import { useCategoriseDrawer } from '../contexts/CategoriseDrawerContext';
@@ -119,6 +122,8 @@ export default function Dashboard() {
   const [incomeCats, setIncomeCats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [staleAccounts, setStaleAccounts] = useState([]);
+  const [remindersExpanded, setRemindersExpanded] = useState(true);
 
   const load = useCallback(async () => {
     if (!dateFrom || !dateTo || dateFrom > dateTo) return;
@@ -145,6 +150,17 @@ export default function Dashboard() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    fetchUploadReminders()
+      .then(accounts => {
+        const stale = accounts.filter(a =>
+          a.days_since_upload === null || a.days_since_upload >= 7
+        );
+        setStaleAccounts(stale);
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <div>
       {/* Header + date picker */}
@@ -159,6 +175,48 @@ export default function Dashboard() {
           onChange={(from, to) => { setDateFrom(from); setDateTo(to); }}
         />
       </div>
+
+      {staleAccounts.length > 0 && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 overflow-hidden">
+          <button
+            onClick={() => setRemindersExpanded(e => !e)}
+            className="w-full flex items-center justify-between px-4 py-3 text-left"
+          >
+            <div className="flex items-center gap-2">
+              <Upload size={15} className="text-amber-600" />
+              <span className="text-sm font-medium text-amber-800">
+                {staleAccounts.length} account{staleAccounts.length !== 1 ? 's' : ''} not uploaded in 7+ days
+              </span>
+            </div>
+            {remindersExpanded
+              ? <ChevronUp size={14} className="text-amber-500" />
+              : <ChevronDown size={14} className="text-amber-500" />}
+          </button>
+          {remindersExpanded && (
+            <div className="border-t border-amber-200 divide-y divide-amber-100">
+              {staleAccounts.map(acc => (
+                <div key={acc.id} className="flex items-center justify-between px-4 py-2.5">
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">{acc.account_name}</p>
+                    <p className="text-xs text-gray-500">
+                      {acc.bank_name} ·{' '}
+                      {acc.last_upload_at
+                        ? `Last imported ${acc.days_since_upload}d ago`
+                        : 'Never imported'}
+                    </p>
+                  </div>
+                  <Link
+                    to={`/upload?account_id=${acc.id}`}
+                    className="text-xs text-amber-700 bg-white border border-amber-300 hover:bg-amber-50 px-2.5 py-1 rounded-lg transition-colors font-medium"
+                  >
+                    Upload now
+                  </Link>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{error}</div>

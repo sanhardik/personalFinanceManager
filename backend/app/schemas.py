@@ -210,6 +210,7 @@ class AccountResponse(BaseModel):
     loan_term_years: int | None = None
     loan_repayment_type: str | None = None
     offset_account_id: int | None = None
+    last_upload_at: datetime | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

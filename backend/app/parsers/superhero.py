@@ -42,14 +42,18 @@ SUPERHERO_REQUIRED_HEADERS = {
     "Net Amount",
 }
 
-DATE_FORMAT = "%d/%m/%Y"
+# Try these date formats in order — DD/MM/YYYY is standard Superhero, others are fallbacks
+DATE_FORMATS = ["%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d %b %Y", "%d/%m/%y"]
 
 
 def _parse_amount(value: str) -> float:
-    """Parse a dollar amount string, stripping '$' and handling negatives."""
+    """Parse a dollar amount string, handling '$', commas, negatives, and parentheses."""
     if not value or not value.strip():
         return 0.0
     cleaned = value.strip().replace("$", "").replace(",", "")
+    # Parenthetical negatives: (101.02) → -101.02
+    if cleaned.startswith("(") and cleaned.endswith(")"):
+        cleaned = "-" + cleaned[1:-1]
     try:
         return float(cleaned)
     except ValueError:
@@ -57,13 +61,16 @@ def _parse_amount(value: str) -> float:
 
 
 def _parse_date(value: str) -> datetime | None:
-    """Parse DD/MM/YYYY date string, returning None if empty or invalid."""
+    """Parse a date string, trying multiple formats."""
     if not value or not value.strip():
         return None
-    try:
-        return datetime.strptime(value.strip(), DATE_FORMAT)
-    except ValueError:
-        return None
+    v = value.strip()
+    for fmt in DATE_FORMATS:
+        try:
+            return datetime.strptime(v, fmt)
+        except ValueError:
+            continue
+    return None
 
 
 class SuperheroParser:
@@ -87,7 +94,7 @@ class SuperheroParser:
         Handles quoted headers (e.g. "Transaction Date") and trailing spaces
         (e.g. "Net Amount ") that Superhero includes in its exports.
         """
-        lines = content.splitlines()[:30]
+        lines = content.splitlines()[:50]
         for line in lines:
             # Strip quotes and surrounding whitespace from each token
             cols = {c.strip().strip('"').strip() for c in line.split(",")}
@@ -111,7 +118,7 @@ class SuperheroParser:
         account_number = ""
         header_row_index = -1
 
-        for i, line in enumerate(lines):
+        for i, line in enumerate(lines[:50]):
             if not line.strip():
                 continue
 
@@ -203,6 +210,12 @@ class SuperheroParser:
                 gst=gst,
                 tax=tax,
             ))
+
+        if row_count > 0 and not trades:
+            errors.append(
+                f"Parsed {row_count} rows but found no valid trades "
+                f"({skipped_count} skipped). Check date format and column names."
+            )
 
         return StockParseResult(
             platform_name=self.platform_name,

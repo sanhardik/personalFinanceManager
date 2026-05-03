@@ -10,3 +10,6 @@ export const fetchDashboardMonthly = (dateFrom, dateTo) =>
 
 export const fetchDashboardByCategory = (txType, dateFrom, dateTo) =>
   api.get('/dashboard/by-category', { params: { tx_type: txType, ...dates(dateFrom, dateTo) } }).then(r => r.data);
+
+export const fetchUploadReminders = () =>
+  api.get('/dashboard/upload-reminders').then(r => r.data);

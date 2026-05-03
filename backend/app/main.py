@@ -143,6 +143,22 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Migration: transfer_account_id on rules failed (non-fatal): %s", e)
 
+        # Schema migration — add last_upload_at to accounts
+        try:
+            async with engine.begin() as conn:
+                exists = await conn.execute(text(
+                    "SELECT COUNT(*) FROM information_schema.COLUMNS "
+                    "WHERE TABLE_SCHEMA = DATABASE() "
+                    "AND TABLE_NAME = 'accounts' AND COLUMN_NAME = 'last_upload_at'"
+                ))
+                if exists.scalar() == 0:
+                    await conn.execute(text(
+                        "ALTER TABLE accounts ADD COLUMN last_upload_at DATETIME NULL"
+                    ))
+                    logger.info("Migration: added last_upload_at to accounts")
+        except Exception as e:
+            logger.warning("Migration: last_upload_at on accounts failed (non-fatal): %s", e)
+
         # Schema migration — fix suggested_rules.promoted_rule_id FK to ON DELETE SET NULL
         try:
             async with engine.begin() as conn:

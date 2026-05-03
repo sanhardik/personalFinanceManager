@@ -11,6 +11,7 @@ Flow:
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -119,6 +120,19 @@ async def _process_parse_result(
     except IntegrityError as e:
         await db.rollback()
         errors.append(f"Database error: {str(e)[:200]}")
+
+    # Update last_upload_at for all accounts in this upload
+    now = datetime.utcnow()
+    for acc_id in account_map.values():
+        acc_result = await db.execute(select(Account).where(Account.id == acc_id))
+        acc = acc_result.scalar_one_or_none()
+        if acc:
+            acc.last_upload_at = now
+    try:
+        await db.commit()
+    except Exception as e:
+        logger.warning("Could not update last_upload_at: %s", e)
+        await db.rollback()
 
     if inserted > 0:
         try:
@@ -280,6 +294,14 @@ async def process_stock_csv_upload(
     except IntegrityError as e:
         await db.rollback()
         errors.append(f"Database error: {str(e)[:200]}")
+
+    # Update last_upload_at for the investment account
+    try:
+        account.last_upload_at = datetime.utcnow()
+        await db.commit()
+    except Exception as e:
+        logger.warning("Could not update last_upload_at for stock account: %s", e)
+        await db.rollback()
 
     logger.info(
         "Stock upload complete: %s — %d inserted, %d duplicates, %d errors",
