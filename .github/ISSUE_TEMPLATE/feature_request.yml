@@ -1,0 +1,59 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+labels: ["feature", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea? We'd love to hear it. Please describe the problem you're trying to solve — not just the solution. This helps us understand the context and find the best way to address it.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation where you feel something is missing or could be better.
+      placeholder: "I often need to split a transaction across multiple categories (e.g. a supermarket shop that includes groceries, household items, and medicine). Right now I can only assign one category per transaction."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe what you'd like to happen.
+      placeholder: "A 'split transaction' feature that lets me allocate percentages or amounts to multiple categories."
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+      description: Any other approaches you've thought about?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which area does this relate to?
+      options:
+        - Transaction management
+        - Bank CSV import
+        - Categorisation / Rules
+        - Dashboard / Charts
+        - Home loans / Assets
+        - Stock portfolio
+        - Installation / Setup
+        - Performance
+        - Other
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Mockups, screenshots, links to similar features elsewhere — anything that helps explain the idea.
+    validations:
+      required: false

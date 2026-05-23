@@ -1,0 +1,83 @@
+name: Bank / Institution Parser Request
+description: Request support for a new bank, credit union, or brokerage CSV format
+labels: ["bank: new-request", "help wanted"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Want your bank supported? Great — this is one of the best ways to contribute.
+
+        You don't need to write code to make this request. Just provide a sample CSV and we (or a contributor) will build the parser.
+
+        **Important:** Please anonymise any sample data before pasting it. Replace account numbers with `XXXXXXXXX`, real names with `CUSTOMER NAME`, and use fake amounts. Do not paste real financial data.
+
+  - type: input
+    id: bank_name
+    attributes:
+      label: Bank or institution name
+      placeholder: "Commonwealth Bank of Australia (CBA)"
+    validations:
+      required: true
+
+  - type: input
+    id: country
+    attributes:
+      label: Country
+      placeholder: "Australia"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: account_type
+    attributes:
+      label: Account type
+      multiple: true
+      options:
+        - Everyday / Transaction account
+        - Savings account
+        - Credit card
+        - Home loan
+        - Investment / Brokerage
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: csv_sample
+    attributes:
+      label: Anonymised CSV sample (first 5–10 rows including header)
+      description: |
+        Paste a small sample of the CSV export with all personal data replaced with fake values.
+        Include the header row — this is critical for parser detection.
+      render: text
+      placeholder: |
+        Date,Amount,Balance,Description
+        01/05/2026,-42.50,1234.56,COLES SUPERMARKETS SYDNEY
+        02/05/2026,3000.00,4234.56,SALARY EMPLOYER PTY LTD
+        03/05/2026,-15.00,4219.56,NETFLIX.COM
+    validations:
+      required: true
+
+  - type: input
+    id: date_format
+    attributes:
+      label: Date format in the CSV
+      placeholder: "DD/MM/YYYY or DD Mon YY or YYYY-MM-DD"
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Any quirks or edge cases you've noticed?
+      description: e.g. separate debit/credit columns, metadata rows before the header, multiple account types in one file, encoding issues
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Would you like to write the parser yourself?
+      options:
+        - label: Yes — I'd like to try writing it with guidance
+        - label: No — I'm just requesting it for someone else to implement

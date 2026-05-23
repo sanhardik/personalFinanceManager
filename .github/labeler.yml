@@ -1,0 +1,88 @@
+# Auto-label PRs based on changed file paths
+# Used by the labeler workflow
+
+"area: frontend":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "frontend/**"
+
+"area: backend":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "backend/app/**"
+
+"area: parser":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "backend/app/parsers/**"
+
+"bank: westpac":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "backend/app/parsers/westpac.py"
+      - "backend/tests/test_westpac_parser.py"
+      - "backend/tests/fixtures/westpac_*.csv"
+
+"bank: nab":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "backend/app/parsers/nab.py"
+      - "backend/tests/test_nab_parser.py"
+      - "backend/tests/fixtures/nab_*.csv"
+
+"bank: macquarie":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "backend/app/parsers/macquarie.py"
+      - "backend/tests/test_macquarie*.py"
+      - "backend/tests/fixtures/macquarie_*.csv"
+
+"bank: superhero":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "backend/app/parsers/superhero*.py"
+      - "backend/tests/test_superhero*.py"
+      - "backend/tests/fixtures/superhero_*.csv"
+
+"area: dashboard":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "backend/app/routers/dashboard.py"
+      - "frontend/src/pages/Dashboard.jsx"
+      - "frontend/src/api/dashboard.js"
+
+"area: rules":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "backend/app/routers/rules.py"
+      - "backend/app/services/categoriser.py"
+      - "backend/app/services/pattern_extractor.py"
+      - "frontend/src/pages/Rules.jsx"
+
+"area: loans":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "backend/app/routers/loans.py"
+      - "backend/app/routers/assets.py"
+      - "frontend/src/pages/Loans.jsx"
+      - "frontend/src/pages/Assets.jsx"
+
+"area: investments":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "backend/app/routers/investments.py"
+      - "frontend/src/pages/Investments.jsx"
+
+"docs":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "*.md"
+      - "docs/**"
+      - ".github/**/*.md"
+
+"area: ci":
+  - changed-files:
+    - any-glob-to-any-file:
+      - ".github/workflows/**"
+      - "docker-compose*.yml"
+      - "run.sh"

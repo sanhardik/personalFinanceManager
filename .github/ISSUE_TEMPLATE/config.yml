@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question
+    url: https://github.com/sanhardik/personalFinanceManager/discussions/categories/q-a
+    about: Ask questions and get help in Discussions rather than Issues
+  - name: Share your setup
+    url: https://github.com/sanhardik/personalFinanceManager/discussions/categories/show-and-tell
+    about: Show off how you're using the app
+  - name: Suggest a bank
+    url: https://github.com/sanhardik/personalFinanceManager/discussions/categories/bank-requests
+    about: Discuss bank support in Discussions before opening a formal issue
