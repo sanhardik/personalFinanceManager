@@ -46,7 +46,7 @@ def test_loan_account_name_passed_through():
     parser = MacquarieParser()
     result = parser.parse(LOAN_CSV)
     names = {tx.account_name for tx in result.transactions}
-    assert "Boondall" in names
+    assert "Greenfield" in names
 
 
 def test_loan_slug_includes_account_name():
@@ -56,7 +56,7 @@ def test_loan_slug_includes_account_name():
     slugs = {tx.account_number for tx in result.transactions}
     assert len(slugs) == 1
     slug = list(slugs)[0]
-    assert slug.startswith("MAC-BOONDALL")
+    assert slug.startswith("MAC-GREENFIELD")
 
 
 def test_savings_account_type_unchanged():
@@ -97,7 +97,7 @@ def test_drawdown_row_is_expense():
     drawdown = [tx for tx in result.transactions if "drawdown" in tx.tx_desc.lower()]
     assert len(drawdown) == 1
     assert drawdown[0].tx_type == "Expense"
-    assert drawdown[0].tx_amount == 472050.0
+    assert drawdown[0].tx_amount == 601400.0
 
 
 def test_documentation_fee_is_expense():
@@ -116,12 +116,12 @@ def test_interest_amount_correct():
     """Interest charged amount parsed correctly."""
     parser = MacquarieParser()
     result = parser.parse(LOAN_CSV)
-    # Most recent interest: 2020.46 (Mar 2026)
+    # Most recent interest: 2578.90 (Mar 2026)
     interest_txs = [tx for tx in result.transactions
                     if "Interest charged" in tx.tx_desc
                     and tx.tx_date.month == 3 and tx.tx_date.year == 2026]
     assert len(interest_txs) == 1
-    assert interest_txs[0].tx_amount == pytest.approx(2020.46)
+    assert interest_txs[0].tx_amount == pytest.approx(2578.90)
 
 
 def test_negative_balance_preserved():
@@ -182,7 +182,7 @@ async def test_upload_loan_csv_creates_home_loan_account(client: AsyncClient):
     accounts = await client.get("/accounts")
     loan_accounts = [a for a in accounts.json() if a["account_type"] == "home_loan"]
     assert len(loan_accounts) >= 1
-    assert loan_accounts[0]["account_name"] == "Boondall"
+    assert loan_accounts[0]["account_name"] == "Greenfield"
 
 
 @pytest.mark.anyio
@@ -195,5 +195,5 @@ async def test_upload_loan_csv_no_false_bank_account(client: AsyncClient):
         )
     accounts = await client.get("/accounts")
     # All Macquarie loan accounts should be home_loan, not bank
-    mac_accounts = [a for a in accounts.json() if "MAC-BOONDALL" in a["account_number"]]
+    mac_accounts = [a for a in accounts.json() if "MAC-GREENFIELD" in a["account_number"]]
     assert all(a["account_type"] == "home_loan" for a in mac_accounts)

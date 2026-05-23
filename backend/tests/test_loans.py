@@ -51,7 +51,7 @@ async def test_list_loans_after_upload(client: AsyncClient):
     r = await client.get("/loans")
     assert r.status_code == 200
     assert len(r.json()) >= 1
-    assert r.json()[0]["account_name"] == "Boondall"
+    assert r.json()[0]["account_name"] == "Greenfield"
 
 
 @pytest.mark.anyio

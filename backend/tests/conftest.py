@@ -144,6 +144,37 @@ async def truncate_data(test_session_factory, setup_test_database):
     yield
 
 
+class _ApiClient:
+    """
+    Thin wrapper around AsyncClient that prepends /api to every request path.
+
+    All routers are mounted under /api in main.py so that the built frontend
+    (served by FastAPI in production) and the dev Vite proxy both work correctly.
+    Tests hit FastAPI directly via ASGI, so they need the /api prefix too.
+    """
+
+    def __init__(self, client: AsyncClient):
+        self._c = client
+
+    def _url(self, path: str) -> str:
+        return f"/api{path}"
+
+    async def get(self, url, **kw):
+        return await self._c.get(self._url(url), **kw)
+
+    async def post(self, url, **kw):
+        return await self._c.post(self._url(url), **kw)
+
+    async def put(self, url, **kw):
+        return await self._c.put(self._url(url), **kw)
+
+    async def patch(self, url, **kw):
+        return await self._c.patch(self._url(url), **kw)
+
+    async def delete(self, url, **kw):
+        return await self._c.delete(self._url(url), **kw)
+
+
 @pytest.fixture
 async def client(test_session_factory, setup_test_database):
     """
@@ -163,6 +194,6 @@ async def client(test_session_factory, setup_test_database):
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
+        yield _ApiClient(ac)
 
     app.dependency_overrides.clear()
