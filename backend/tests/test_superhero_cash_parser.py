@@ -240,7 +240,7 @@ async def test_upload_cash_statement(client: AsyncClient):
     assert data["inserted"] == 4   # 3 deposits + 1 FX transfer
     assert data["duplicates"] == 0
     assert data["errors"] == []
-    assert "C6490998-CASH-AUD" in data["accounts_found"]
+    assert "C1234567-CASH-AUD" in data["accounts_found"]
 
 
 @pytest.mark.asyncio
@@ -269,7 +269,7 @@ async def test_detect_cash_statement(client: AsyncClient):
     data = r.json()
     assert data["bank_name"] == "Superhero"
     assert data["csv_type"] == "bank"
-    assert data["accounts"][0]["account_number"] == "C6490998-CASH-AUD"
+    assert data["accounts"][0]["account_number"] == "C1234567-CASH-AUD"
     assert data["accounts"][0]["account_type"] == "bank"
 
 
@@ -300,8 +300,8 @@ async def test_cash_and_trade_uploads_separate_accounts(client: AsyncClient):
 
     # Accounts must be different
     assert r1.json()["accounts_found"] != r2.json()["accounts_found"]
-    assert "C6490998-CASH-AUD" in r1.json()["accounts_found"]
-    assert "C6490998" in r2.json()["accounts_found"]
+    assert "C1234567-CASH-AUD" in r1.json()["accounts_found"]
+    assert "C1234567" in r2.json()["accounts_found"]
 
 
 # ── USD Cash Statement ────────────────────────────────────────────────────────
@@ -420,7 +420,7 @@ async def test_upload_usd_cash_statement(client: AsyncClient):
     assert data["bank_name"] == "Superhero"
     assert data["inserted"] == 2
     assert data["duplicates"] == 0
-    assert "C6490998-CASH-USD" in data["accounts_found"]
+    assert "C1234567-CASH-USD" in data["accounts_found"]
 
 
 @pytest.mark.asyncio
@@ -434,5 +434,5 @@ async def test_aud_and_usd_uploads_separate_accounts(client: AsyncClient):
 
     assert r1.status_code == 200
     assert r2.status_code == 200
-    assert "C6490998-CASH-AUD" in r1.json()["accounts_found"]
-    assert "C6490998-CASH-USD" in r2.json()["accounts_found"]
+    assert "C1234567-CASH-AUD" in r1.json()["accounts_found"]
+    assert "C1234567-CASH-USD" in r2.json()["accounts_found"]

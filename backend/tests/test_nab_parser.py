@@ -216,7 +216,7 @@ async def test_upload_nab_csv(client):
     assert data["bank_name"] == "NAB"
     assert data["inserted"] > 0
     assert data["total_rows"] > 0
-    assert "701314870" in data["accounts_found"]
+    assert "612345678" in data["accounts_found"]
 
 
 @pytest.mark.anyio

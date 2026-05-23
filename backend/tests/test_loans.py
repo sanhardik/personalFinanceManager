@@ -95,8 +95,8 @@ async def test_loan_summary_current_balance(client: AsyncClient):
     loan_id = await _get_loan_id(client)
     r = await client.get(f"/loans/{loan_id}/summary")
     data = r.json()
-    # From fixture: latest balance is -455621.68 → current_balance ≈ 455621
-    assert data["current_balance"] == pytest.approx(455621.68, abs=2.0)
+    # From fixture: latest balance is -581204.88 → current_balance ≈ 581205
+    assert data["current_balance"] == pytest.approx(581204.88, abs=2.0)
 
 
 @pytest.mark.anyio
@@ -137,9 +137,11 @@ async def test_loan_summary_projected_payoff_with_rate(client: AsyncClient):
     """projected_payoff_date is set when interest rate is configured on the account."""
     await _upload_loan(client)
     loan_id = await _get_loan_id(client)
-    # Set interest rate + repayment type
+    # Set interest rate + repayment type.
+    # Use a low rate (2.5%) so the avg monthly payment (~$2,695) exceeds monthly
+    # interest on the fixture balance (~$581k), making payoff calculable.
     await client.put(f"/accounts/{loan_id}", json={
-        "loan_interest_rate": 5.84,
+        "loan_interest_rate": 2.5,
         "loan_repayment_type": "principal_and_interest",
         "loan_term_years": 30,
     })

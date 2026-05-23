@@ -174,6 +174,9 @@ class _ApiClient:
     async def delete(self, url, **kw):
         return await self._c.delete(self._url(url), **kw)
 
+    async def options(self, url, **kw):
+        return await self._c.options(self._url(url), **kw)
+
 
 @pytest.fixture
 async def client(test_session_factory, setup_test_database):
