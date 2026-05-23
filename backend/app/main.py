@@ -200,19 +200,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Register routers ─────────────────────────────────────────
-app.include_router(accounts_router)
-app.include_router(assets_router)
-app.include_router(categories_router)
-app.include_router(dashboard_router)
-app.include_router(investments_router)
-app.include_router(loans_router)
-app.include_router(rules_router)
-app.include_router(transactions_router)
-app.include_router(upload_router)
+# ── Register routers (all under /api so they work in production too) ─────────
+# In dev mode, Vite proxy strips /api before forwarding to port 8000.
+# In production, FastAPI serves the built frontend and must handle /api/* directly.
+app.include_router(accounts_router,     prefix="/api")
+app.include_router(assets_router,       prefix="/api")
+app.include_router(categories_router,   prefix="/api")
+app.include_router(dashboard_router,    prefix="/api")
+app.include_router(investments_router,  prefix="/api")
+app.include_router(loans_router,        prefix="/api")
+app.include_router(rules_router,        prefix="/api")
+app.include_router(transactions_router, prefix="/api")
+app.include_router(upload_router,       prefix="/api")
 
 
-@app.get("/health")
+@app.get("/api/health")
 async def health_check():
     """
     Health check endpoint.

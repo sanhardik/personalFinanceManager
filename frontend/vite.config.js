@@ -6,7 +6,7 @@
  * - Tailwind CSS plugin for utility-first styling
  * - Dev server runs on port 5173 (Vite default)
  * - API proxy: /api/* requests are forwarded to FastAPI on port 8000
- *   (strips the /api prefix so /api/health → localhost:8000/health)
+ *   (prefix is kept so /api/health → localhost:8000/api/health)
  */
 
 import { defineConfig } from 'vite'
@@ -19,11 +19,10 @@ export default defineConfig({
     port: 5173,
     proxy: {
       // Proxy API calls to the FastAPI backend.
-      // The rewrite strips '/api' so frontend calls /api/health → backend /health.
+      // No rewrite — /api/accounts stays as /api/accounts on the backend.
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },
   },
