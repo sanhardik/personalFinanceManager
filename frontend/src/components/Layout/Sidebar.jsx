@@ -1,14 +1,3 @@
-/**
- * Sidebar navigation component.
- *
- * Renders the left sidebar with:
- * - App logo and name
- * - Navigation links to all pages (Dashboard, Transactions, etc.)
- * - Active state highlighting via React Router's NavLink
- *
- * Navigation items are defined in the navItems array — add new pages here.
- */
-
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -25,11 +14,6 @@ import {
 import { useTransactionStats } from '../../contexts/TransactionStatsContext';
 import { useCategoriseDrawer } from '../../contexts/CategoriseDrawerContext';
 
-/**
- * Navigation items configuration.
- * Each entry maps a route path to a label and icon.
- * Add new pages here as chunks are completed.
- */
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/accounts', label: 'Accounts', icon: Landmark },
@@ -43,13 +27,12 @@ const navItems = [
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ onNavigate }) {
   const { stats } = useTransactionStats();
   const { open } = useCategoriseDrawer();
 
   return (
     <aside className="w-60 bg-white border-r border-gray-200 min-h-screen flex flex-col">
-      {/* App logo and title */}
       <div className="p-5 border-b border-gray-200">
         <h1 className="text-lg font-semibold text-gray-800 tracking-tight">
           Finance Manager
@@ -57,7 +40,6 @@ export default function Sidebar() {
         <p className="text-xs text-gray-400 mt-0.5">Personal Finance Tracker</p>
       </div>
 
-      {/* Navigation links — NavLink auto-applies active styling */}
       <nav className="flex-1 p-3">
         <ul className="space-y-1">
           {navItems.map(({ to, label, icon: Icon }) => (
@@ -65,6 +47,7 @@ export default function Sidebar() {
               <NavLink
                 to={to}
                 end={to === '/'}
+                onClick={onNavigate}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                     isActive

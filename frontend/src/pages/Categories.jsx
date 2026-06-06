@@ -206,7 +206,7 @@ export default function Categories() {
         </td>
 
         {/* Parent */}
-        <td className="px-4 py-2.5">
+        <td className="hidden md:table-cell px-4 py-2.5">
           {editingId === cat.id ? (
             <select value={editParentId} onChange={e => setEditParentId(e.target.value)}
               className="px-2 py-1 border border-gray-300 rounded text-sm">
@@ -223,7 +223,7 @@ export default function Categories() {
         </td>
 
         {/* Colour */}
-        <td className="px-4 py-2.5">
+        <td className="hidden md:table-cell px-4 py-2.5">
           {editingId === cat.id ? (
             <div className="flex items-center gap-2">
               <input type="color" value={editColour} onChange={e => setEditColour(e.target.value)}
@@ -396,13 +396,14 @@ export default function Categories() {
 
       {!loading && rows.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Name</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Type</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Parent</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Colour</th>
+                <th className="hidden md:table-cell text-left px-4 py-3 font-medium text-gray-500">Parent</th>
+                <th className="hidden md:table-cell text-left px-4 py-3 font-medium text-gray-500">Colour</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-500">Actions</th>
               </tr>
             </thead>
@@ -427,6 +428,7 @@ export default function Categories() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

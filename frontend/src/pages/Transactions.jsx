@@ -538,9 +538,9 @@ export default function Transactions() {
                     <tr className="border-b border-gray-100 bg-gray-50">
                       <SortableHeader label="Date" column="tx_date" sort={sort} onSort={onSort} />
                       <SortableHeader label="Description" column="tx_desc" sort={sort} onSort={onSort} />
-                      <th className="text-left px-4 py-3 font-medium text-gray-500">Account</th>
+                      <th className="hidden md:table-cell text-left px-4 py-3 font-medium text-gray-500">Account</th>
                       <SortableHeader label="Amount" column="tx_amount" sort={sort} onSort={onSort} align="right" />
-                      <th className="text-right px-4 py-3 font-medium text-gray-500">Balance</th>
+                      <th className="hidden lg:table-cell text-right px-4 py-3 font-medium text-gray-500">Balance</th>
                       <SortableHeader label="Category" column="category" sort={sort} onSort={onSort} />
                     </tr>
                   </thead>
@@ -555,13 +555,13 @@ export default function Transactions() {
                       }`}>
                         <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(tx.tx_date)}</td>
                         <td className="px-4 py-3 text-gray-800 max-w-xs truncate" title={tx.tx_desc}>{tx.tx_desc}</td>
-                        <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{getAccountName(tx.account_id)}</td>
+                        <td className="hidden md:table-cell px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{getAccountName(tx.account_id)}</td>
                         <td className={`px-4 py-3 text-right font-medium whitespace-nowrap ${
                           tx.tx_type === 'Income' ? 'text-green-600' : 'text-gray-800'
                         }`}>
                           {tx.tx_type === 'Income' ? '+' : '-'}{formatAmount(tx.tx_amount)}
                         </td>
-                        <td className="px-4 py-3 text-right text-gray-400 whitespace-nowrap">
+                        <td className="hidden lg:table-cell px-4 py-3 text-right text-gray-400 whitespace-nowrap">
                           {tx.balance != null ? formatAmount(tx.balance) : '—'}
                         </td>
                         <td className="px-4 py-3">

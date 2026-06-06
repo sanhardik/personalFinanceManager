@@ -488,12 +488,13 @@ export default function Rules() {
 
       {!loading && filtered.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
                 <SortableHeader label="Pattern" column="pattern" sort={sort} onSort={onSort} />
                 <SortableHeader label="Category" column="category" sort={sort} onSort={onSort} />
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Transfer Account</th>
+                <th className="hidden md:table-cell text-left px-4 py-3 font-medium text-gray-500">Transfer Account</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Status</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-500">Actions</th>
               </tr>
@@ -523,7 +524,7 @@ export default function Rules() {
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="hidden md:table-cell px-4 py-3">
                     {editingId === rule.id ? (
                       isTransferCategory(editCategoryId) ? (
                         <select value={editTransferAccountId} onChange={e => setEditTransferAccountId(e.target.value)}
@@ -584,6 +585,7 @@ export default function Rules() {
               ))}
             </tbody>
           </table>
+          </div>
           {inactiveCount > 0 && (
             <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 text-xs text-gray-400">
               {inactiveCount} inactive rule{inactiveCount !== 1 ? 's' : ''} shown (dimmed)

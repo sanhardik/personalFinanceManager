@@ -194,7 +194,11 @@ app = FastAPI(
 # In production, restrict allow_origins to the actual frontend domain.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL, "http://localhost:3000"],
+    allow_origins=[
+        settings.FRONTEND_URL,
+        "http://localhost:5173",  # Vite dev server
+        "http://localhost:3000",  # Alt dev port
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
