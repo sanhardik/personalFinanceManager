@@ -235,6 +235,129 @@ Use a different port: `python3 start.py --port 8080`
 
 ---
 
+## Raspberry Pi Deployment
+
+Running the app always-on via a Pi on your local network is a great option. These instructions assume a **Raspberry Pi 4** running Debian/Raspberry Pi OS (64-bit), with nginx serving the frontend and proxying `/api/*` to uvicorn.
+
+### Prerequisites on the Pi
+
+```bash
+sudo apt update && sudo apt install -y mariadb-server nginx nodejs npm
+```
+
+Python 3.11+ ships with Debian 12 (bookworm) and later. Check with `python3 --version`.
+
+### 1 — Clone and install
+
+```bash
+git clone https://github.com/sanhardik/personalFinanceManager.git ~/FinancePortfolioManager
+cd ~/FinancePortfolioManager
+python3 bootstrap.py   # choose "External MariaDB" and fill in credentials
+```
+
+### 2 — Create the MariaDB database
+
+```sql
+sudo mariadb
+CREATE DATABASE finance_app;
+CREATE USER 'finance_user'@'localhost' IDENTIFIED BY 'your_password';
+GRANT ALL PRIVILEGES ON finance_app.* TO 'finance_user'@'localhost';
+FLUSH PRIVILEGES;
+EXIT;
+```
+
+### 3 — Build the frontend
+
+```bash
+cd ~/FinancePortfolioManager/frontend
+npm install
+npm run build
+chmod -R o+rX dist   # nginx (www-data) needs read access
+```
+
+Also make the parent directory traversable by nginx:
+```bash
+chmod o+x /home/$(whoami)
+```
+
+### 4 — Configure nginx
+
+Create `/etc/nginx/sites-available/financeapp`:
+
+```nginx
+server {
+    listen 80;
+    server_name _;   # catch-all — matches any hostname / IP
+
+    root /home/YOUR_USER/FinancePortfolioManager/frontend/dist;
+    index index.html;
+
+    # Proxy API calls to FastAPI
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # SPA fallback — send all non-asset routes to index.html
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+Replace `YOUR_USER` with your Pi username, then enable it:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/financeapp /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### 5 — Create a systemd service
+
+Create `/etc/systemd/system/financeapp-backend.service`:
+
+```ini
+[Unit]
+Description=Finance App FastAPI backend
+After=network.target mariadb.service
+Requires=mariadb.service
+
+[Service]
+User=YOUR_USER
+WorkingDirectory=/home/YOUR_USER/FinancePortfolioManager/backend
+EnvironmentFile=/home/YOUR_USER/FinancePortfolioManager/backend/.env
+ExecStart=/home/YOUR_USER/FinancePortfolioManager/backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now financeapp-backend
+```
+
+The app will now be accessible at **http://\<pi-ip-address\>** on your local network and auto-starts on boot.
+
+### Updating the Pi
+
+```bash
+ssh user@pi-address
+cd ~/FinancePortfolioManager && git pull
+# If Python deps changed:
+backend/venv/bin/pip install -r backend/requirements.txt
+# Rebuild frontend:
+cd frontend && npm run build && chmod -R o+rX dist && cd ..
+sudo systemctl restart financeapp-backend
+```
+
+---
+
 ## Roadmap
 
 - Simply Wall St (SWS) stock portfolio integration
