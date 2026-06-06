@@ -6,7 +6,7 @@ Run this once after downloading the app to configure your database,
 build the frontend, and set up the Python environment.
 
 Usage:
-    python3 install.py          (Mac/Linux)
+    python3 install.py          (Mac/Linux / Raspberry Pi)
     python install.py           (Windows)
 """
 
@@ -61,19 +61,37 @@ def run(cmd, cwd=None, env=None, capture=False):
     return subprocess.run(cmd, check=True, **kwargs)
 
 
-# ── Step 0: Database choice ───────────────────────────────────
+# ── Step 0: Deployment mode + database choice ─────────────────
 
-def prompt_db_choice() -> int:
+def prompt_choices():
     print(BANNER)
+
+    print("  Deployment mode:\n")
+    print("    1)  Local desktop  (Mac / Windows / Linux desktop)")
+    print("    2)  Server / Raspberry Pi  (always-on, served via nginx)")
+    print()
+    while True:
+        mode = input("  Enter 1 or 2  [default: 1]: ").strip() or "1"
+        if mode in ("1", "2"):
+            is_server = mode == "2"
+            break
+        print("  Please enter 1 or 2.")
+
+    print()
     print("  Which database would you like to use?\n")
     print("    1)  SQLite          (recommended — no extra software needed)")
     print("    2)  Docker+MariaDB  (requires Docker Desktop)")
     print("    3)  External MariaDB (you already have MariaDB running)")
     print()
+
+    # On server/RPi mode, SQLite and external MariaDB make most sense
+    if is_server:
+        print("  Tip: for a server deployment, SQLite (1) or External MariaDB (3) are recommended.\n")
+
     while True:
         choice = input("  Enter 1, 2, or 3  [default: 1]: ").strip() or "1"
         if choice in ("1", "2", "3"):
-            return int(choice)
+            return is_server, int(choice)
         print("  Please enter 1, 2, or 3.")
 
 
@@ -135,7 +153,7 @@ def check_prerequisites(db_choice: int):
 
 # ── Step 2: Database configuration ───────────────────────────
 
-def configure_env(db_choice: int):
+def configure_env(db_choice: int, is_server: bool):
     step(2, "Configuring database...")
     env_path = BACKEND_DIR / ".env"
 
@@ -176,11 +194,13 @@ def configure_env(db_choice: int):
         ]
         ok(f"External MariaDB at {host}:{port}/{db_name}")
 
-    lines += [
-        "",
-        "DEBUG=False",
-        "FRONTEND_URL=http://localhost:8000",
-    ]
+    lines += ["", "DEBUG=False"]
+
+    if is_server:
+        lines += ["FRONTEND_URL=http://localhost:80"]
+        ok("Server mode: FRONTEND_URL set to http://localhost:80")
+    else:
+        lines += ["FRONTEND_URL=http://localhost:8000"]
 
     env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     ok(f"Configuration saved to {env_path.relative_to(SCRIPT_DIR)}")
@@ -243,7 +263,7 @@ def setup_python_venv():
 
 # ── Step 5: Frontend build ────────────────────────────────────
 
-def build_frontend():
+def build_frontend(is_server: bool):
     step(5, "Building frontend...")
     npm_cmd = "npm.cmd" if IS_WINDOWS else "npm"
 
@@ -254,6 +274,12 @@ def build_frontend():
     env = {**os.environ, "VITE_API_BASE_URL": ""}
     run([npm_cmd, "run", "build"], cwd=FRONTEND_DIR, env=env)
     ok("Frontend built")
+
+    if is_server and not IS_WINDOWS:
+        # nginx worker (www-data) needs read access to the dist files
+        dist_dir = FRONTEND_DIR / "dist"
+        run(["chmod", "-R", "o+rX", str(dist_dir)])
+        ok("dist/ permissions set (o+rX) for nginx")
 
 
 # ── Step 6: Verification ──────────────────────────────────────
@@ -278,10 +304,96 @@ def verify():
         warn("Virtual environment not found — try running: python3 install.py")
 
 
-# ── Step 7: Success ───────────────────────────────────────────
+# ── Step 7: Server config files (RPi / server mode only) ──────
 
-def print_success():
-    step(7, "Setup complete!")
+NGINX_CONF_TEMPLATE = """\
+server {{
+    listen 80;
+    server_name _;
+
+    root {dist_path};
+    index index.html;
+
+    location /api/ {{
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }}
+
+    location / {{
+        try_files $uri $uri/ /index.html;
+    }}
+}}
+"""
+
+SYSTEMD_UNIT_TEMPLATE = """\
+[Unit]
+Description=Finance App FastAPI backend
+After=network.target mariadb.service
+Requires=mariadb.service
+
+[Service]
+User={user}
+WorkingDirectory={backend_dir}
+EnvironmentFile={env_file}
+ExecStart={uvicorn} app.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+
+def write_server_configs():
+    step(7, "Generating server config files...")
+
+    dist_path = (FRONTEND_DIR / "dist").resolve()
+    backend_dir = BACKEND_DIR.resolve()
+    env_file = (BACKEND_DIR / ".env").resolve()
+    uvicorn = (BACKEND_DIR / "venv" / "bin" / "uvicorn").resolve()
+    current_user = os.environ.get("USER", "pi")
+
+    # nginx config
+    nginx_conf = SCRIPT_DIR / "nginx-financeapp.conf"
+    nginx_conf.write_text(
+        NGINX_CONF_TEMPLATE.format(dist_path=dist_path),
+        encoding="utf-8",
+    )
+    ok(f"nginx config written → {nginx_conf.name}")
+
+    # systemd unit
+    systemd_unit = SCRIPT_DIR / "financeapp-backend.service"
+    systemd_unit.write_text(
+        SYSTEMD_UNIT_TEMPLATE.format(
+            user=current_user,
+            backend_dir=backend_dir,
+            env_file=env_file,
+            uvicorn=uvicorn,
+        ),
+        encoding="utf-8",
+    )
+    ok(f"systemd unit written  → {systemd_unit.name}")
+
+    print()
+    print("  Install them with:")
+    print(f"    sudo cp {nginx_conf.name} /etc/nginx/sites-available/financeapp")
+    print("    sudo ln -s /etc/nginx/sites-available/financeapp /etc/nginx/sites-enabled/")
+    print("    sudo rm -f /etc/nginx/sites-enabled/default")
+    print("    sudo nginx -t && sudo systemctl reload nginx")
+    print()
+    print(f"    sudo cp {systemd_unit.name} /etc/systemd/system/")
+    print("    sudo systemctl daemon-reload")
+    print("    sudo systemctl enable --now financeapp-backend")
+
+
+def skip_server_configs():
+    step(7, "Skipping server config (not needed for desktop mode)...")
+    ok("Skipped")
+
+
+# ── Step 7 (desktop): Success ─────────────────────────────────
+
+def print_success_desktop():
     print()
     print("  ╔══════════════════════════════════════════════════════════╗")
     print("  ║  All done! To start the app:                            ║")
@@ -296,13 +408,26 @@ def print_success():
     print()
 
 
+def print_success_server():
+    print()
+    print("  ╔══════════════════════════════════════════════════════════╗")
+    print("  ║  Setup complete! Follow the steps above to install       ║")
+    print("  ║  nginx and the systemd service, then the app will be     ║")
+    print("  ║  available on port 80 of this machine.                   ║")
+    print("  ║                                                          ║")
+    print("  ║  To update later:                                        ║")
+    print("  ║    git pull && python3 install.py                        ║")
+    print("  ╚══════════════════════════════════════════════════════════╝")
+    print()
+
+
 # ── Main ──────────────────────────────────────────────────────
 
 def main():
-    db_choice = prompt_db_choice()
+    is_server, db_choice = prompt_choices()
 
     check_prerequisites(db_choice)
-    configure_env(db_choice)
+    configure_env(db_choice, is_server)
 
     if db_choice == 2:
         start_docker_db()
@@ -310,9 +435,15 @@ def main():
         skip_docker()
 
     setup_python_venv()
-    build_frontend()
+    build_frontend(is_server)
     verify()
-    print_success()
+
+    if is_server:
+        write_server_configs()
+        print_success_server()
+    else:
+        skip_server_configs()
+        print_success_desktop()
 
 
 if __name__ == "__main__":
