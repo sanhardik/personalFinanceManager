@@ -415,6 +415,21 @@ class HoldingPriceUpdate(BaseModel):
     price: float = Field(..., gt=0)
 
 
+class PriceRefreshResult(BaseModel):
+    """Per-security result from a price-refresh call."""
+    security_code: str
+    price: float | None
+    error: str | None = None
+
+
+class PriceRefreshResponse(BaseModel):
+    """POST /investments/{account_id}/refresh-prices"""
+    updated: int
+    failed: list[str]
+    results: list[PriceRefreshResult]
+    holdings: list["HoldingRow"]
+
+
 # ── Upload ───────────────────────────────────────────────────
 
 class UploadResponse(BaseModel):

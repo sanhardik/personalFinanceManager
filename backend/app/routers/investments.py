@@ -19,12 +19,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Account, StockTrade, StockValuation, Transaction
+from app.services.price_fetcher import fetch_prices
 from app.schemas import (
     DividendRow,
     HoldingPriceUpdate,
     HoldingRow,
     InvestmentResponse,
     PerformanceRow,
+    PriceRefreshResponse,
+    PriceRefreshResult,
     StockTradeResponse,
 )
 
@@ -396,3 +399,60 @@ async def update_holding_price(
     if not match:
         raise HTTPException(status_code=404, detail="Holding not found after update")
     return match
+
+
+@router.post("/{account_id}/refresh-prices", response_model=PriceRefreshResponse)
+async def refresh_prices(
+    account_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Fetch current prices from Yahoo Finance for all holdings in this account.
+    ASX securities are tried with .AX suffix first; falls back to plain ticker.
+    Saves a new StockValuation row for each successful lookup.
+    """
+    acc_result = await db.execute(select(Account).where(Account.id == account_id))
+    if not acc_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    # Get all unique security codes with holdings
+    codes_result = await db.execute(
+        select(StockTrade.security_code)
+        .where(StockTrade.account_id == account_id)
+        .distinct()
+    )
+    codes = [row[0] for row in codes_result.all()]
+    if not codes:
+        raise HTTPException(status_code=404, detail="No securities found for this account")
+
+    price_map = await fetch_prices(codes)
+
+    results: list[PriceRefreshResult] = []
+    updated = 0
+    failed: list[str] = []
+
+    valuation_date = datetime.now(timezone.utc)
+
+    for code, price in price_map.items():
+        if price is not None:
+            db.add(StockValuation(
+                account_id=account_id,
+                security_code=code,
+                price=price,
+                valuation_date=valuation_date,
+            ))
+            results.append(PriceRefreshResult(security_code=code, price=price))
+            updated += 1
+        else:
+            results.append(PriceRefreshResult(security_code=code, price=None, error="not found"))
+            failed.append(code)
+
+    await db.commit()
+    holdings = await get_holdings(account_id=account_id, db=db)
+
+    return PriceRefreshResponse(
+        updated=updated,
+        failed=failed,
+        results=results,
+        holdings=holdings,
+    )

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   TrendingUp, TrendingDown, Loader2, Edit2, Check, X, Plus,
-  ChevronDown, ChevronRight, Zap, Trash2,
+  ChevronDown, ChevronRight, Zap, Trash2, RefreshCw,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -10,6 +10,7 @@ import {
 import {
   fetchInvestments, updateInvestmentValue, fetchHoldings,
   fetchTrades, fetchDividends, fetchPerformance, patchHoldingPrice,
+  refreshPrices,
 } from '../api/investments';
 import { createAccount, deleteAccount } from '../api/accounts';
 
@@ -135,6 +136,8 @@ function HoldingsTable({ accountId }) {
   const [holdings, setHoldings] = useState(null);
   const [expanded, setExpanded] = useState(null); // security_code with open trades panel
   const [trades, setTrades] = useState({});
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState(null);
 
   useEffect(() => {
     fetchHoldings(accountId).then(setHoldings).catch(console.error);
@@ -142,6 +145,24 @@ function HoldingsTable({ accountId }) {
 
   const handlePriceUpdated = (updated) => {
     setHoldings(prev => prev.map(h => h.security_code === updated.security_code ? updated : h));
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    setRefreshMsg(null);
+    try {
+      const result = await refreshPrices(accountId);
+      setHoldings(result.holdings);
+      const msg = result.failed.length === 0
+        ? `Updated ${result.updated} price${result.updated !== 1 ? 's' : ''}`
+        : `Updated ${result.updated}, failed: ${result.failed.join(', ')}`;
+      setRefreshMsg({ ok: result.failed.length === 0, text: msg });
+    } catch {
+      setRefreshMsg({ ok: false, text: 'Price refresh failed' });
+    } finally {
+      setRefreshing(false);
+      setTimeout(() => setRefreshMsg(null), 5000);
+    }
   };
 
   const toggleTrades = async (code) => {
@@ -174,6 +195,23 @@ function HoldingsTable({ accountId }) {
 
   return (
     <div className="mt-4">
+      {/* Refresh prices button */}
+      <div className="flex items-center justify-end gap-3 mb-3">
+        {refreshMsg && (
+          <span className={`text-xs ${refreshMsg.ok ? 'text-green-600' : 'text-red-500'}`}>
+            {refreshMsg.text}
+          </span>
+        )}
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
+          {refreshing ? 'Refreshing…' : 'Refresh Prices'}
+        </button>
+      </div>
+
       {/* Portfolio summary row */}
       <div className="grid grid-cols-4 gap-3 mb-4">
         {[

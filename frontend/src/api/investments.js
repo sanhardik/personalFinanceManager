@@ -20,3 +20,6 @@ export const fetchPerformance = (accountId) =>
 
 export const patchHoldingPrice = (accountId, securityCode, price) =>
   api.patch(`/investments/holdings/${accountId}/${securityCode}/price`, { price }).then(r => r.data);
+
+export const refreshPrices = (accountId) =>
+  api.post(`/investments/${accountId}/refresh-prices`).then(r => r.data);
