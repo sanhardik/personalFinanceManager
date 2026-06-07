@@ -103,7 +103,7 @@ export function GroupCard({ group, categories, onCategorise }) {
                 className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 text-gray-600 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-40 disabled:opacity-40"
               >
                 <option value="" disabled>— pick category for all</option>
-                {nonTransfer.map(c => (
+                {nonTransfer.filter(c => c.category_type === dominantType).map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
