@@ -1,10 +1,10 @@
 """
 Tests for POST /investments/{account_id}/refresh-prices.
 
-yfinance is mocked throughout — these tests never hit the internet.
+Network calls are mocked — these tests never hit the internet.
 """
 import io
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -28,17 +28,33 @@ async def _upload_superhero(client: AsyncClient):
     return next(a["id"] for a in accounts if a["bank_name"] == "Superhero")
 
 
+def _mock_yahoo_response(price: float):
+    """Build a mock httpx.Response that returns the given price."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "chart": {"result": [{"meta": {"regularMarketPrice": price}}]}
+    }
+    return mock_resp
+
+
+def _mock_yahoo_empty():
+    mock_resp = MagicMock()
+    mock_resp.status_code = 429
+    return mock_resp
+
+
 # ── price_fetcher unit tests ───────────────────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_fetch_prices_returns_dict_of_prices():
-    """fetch_prices resolves per-code coroutines and returns {code: price}."""
+    """fetch_prices returns {code: price} when Yahoo responds successfully."""
     from app.services.price_fetcher import fetch_prices
 
-    async def fake_to_thread(fn, code):
+    async def fake_fetch_one(client, code):
         return {"PMGOLD": 52.10, "IVV": 89.50}.get(code)
 
-    with patch("app.services.price_fetcher.asyncio.to_thread", side_effect=fake_to_thread):
+    with patch("app.services.price_fetcher._fetch_one", side_effect=fake_fetch_one):
         result = await fetch_prices(["PMGOLD", "IVV"])
 
     assert result["PMGOLD"] == pytest.approx(52.10)
@@ -49,59 +65,55 @@ async def test_fetch_prices_returns_dict_of_prices():
 async def test_fetch_prices_returns_none_for_unknown():
     from app.services.price_fetcher import fetch_prices
 
-    async def fake_to_thread(fn, code):
+    async def fake_fetch_one(client, code):
         return None
 
-    with patch("app.services.price_fetcher.asyncio.to_thread", side_effect=fake_to_thread):
+    with patch("app.services.price_fetcher._fetch_one", side_effect=fake_fetch_one):
         result = await fetch_prices(["UNKNOWN"])
 
     assert result["UNKNOWN"] is None
 
 
 @pytest.mark.asyncio
-async def test_fetch_price_sync_tries_ax_suffix_first():
-    """_fetch_price_sync tries CODE.AX before plain CODE."""
-    import yfinance as yf
-    from app.services.price_fetcher import _fetch_price_sync
-    import pandas as pd
+async def test_fetch_one_tries_ax_suffix_first():
+    """_fetch_one tries CODE.AX before plain CODE."""
+    import httpx
+    from app.services.price_fetcher import _fetch_one
 
-    tickers_called = []
+    tickers_tried = []
 
-    class FakeTicker:
-        def __init__(self, sym):
-            self.sym = sym
-            tickers_called.append(sym)
+    async def fake_get(url, **kwargs):
+        ticker = url.split("/")[-1]
+        tickers_tried.append(ticker)
+        if ticker == "PMGOLD.AX":
+            return _mock_yahoo_response(52.10)
+        return _mock_yahoo_empty()
 
-        def history(self, period):
-            if self.sym == "PMGOLD.AX":
-                return pd.DataFrame({"Close": [52.10]})
-            return pd.DataFrame()
+    mock_client = AsyncMock(spec=httpx.AsyncClient)
+    mock_client.get = fake_get
 
-    with patch("yfinance.Ticker", FakeTicker):
-        price = _fetch_price_sync("PMGOLD")
+    price = await _fetch_one(mock_client, "PMGOLD")
 
     assert price == pytest.approx(52.10)
-    assert tickers_called[0] == "PMGOLD.AX"
+    assert tickers_tried[0] == "PMGOLD.AX"
 
 
 @pytest.mark.asyncio
-async def test_fetch_price_sync_falls_back_to_plain_ticker():
-    """_fetch_price_sync falls back to plain ticker when .AX has no data."""
-    import pandas as pd
-    from app.services.price_fetcher import _fetch_price_sync
+async def test_fetch_one_falls_back_to_plain_ticker():
+    """_fetch_one returns price from plain ticker when .AX has no data."""
+    import httpx
+    from app.services.price_fetcher import _fetch_one
 
-    class FakeTicker:
-        def __init__(self, sym):
-            self.sym = sym
+    async def fake_get(url, **kwargs):
+        ticker = url.split("/")[-1]
+        if ticker == "IVV":
+            return _mock_yahoo_response(610.25)
+        return _mock_yahoo_empty()
 
-        def history(self, period):
-            if self.sym == "IVV":
-                return pd.DataFrame({"Close": [610.25]})
-            return pd.DataFrame()
+    mock_client = AsyncMock(spec=httpx.AsyncClient)
+    mock_client.get = fake_get
 
-    with patch("yfinance.Ticker", FakeTicker):
-        price = _fetch_price_sync("IVV")
-
+    price = await _fetch_one(mock_client, "IVV")
     assert price == pytest.approx(610.25)
 
 
@@ -123,7 +135,6 @@ async def test_refresh_prices_updates_holdings(client: AsyncClient):
     assert data["updated"] > 0
     assert data["failed"] == []
     assert len(data["holdings"]) > 0
-    # current_price should now be set on holdings
     pmgold = next((h for h in data["holdings"] if h["security_code"] == "PMGOLD"), None)
     assert pmgold is not None
     assert pmgold["current_price"] == pytest.approx(55.00)
@@ -135,10 +146,7 @@ async def test_refresh_prices_partial_failure(client: AsyncClient):
     acc_id = await _upload_superhero(client)
 
     async def fake_fetch_prices(codes):
-        prices = {}
-        for c in codes:
-            prices[c] = 50.00 if c == "PMGOLD" else None
-        return prices
+        return {c: (50.00 if c == "PMGOLD" else None) for c in codes}
 
     with patch("app.routers.investments.fetch_prices", side_effect=fake_fetch_prices):
         resp = await client.post(f"/investments/{acc_id}/refresh-prices")
@@ -147,7 +155,6 @@ async def test_refresh_prices_partial_failure(client: AsyncClient):
     data = resp.json()
     assert data["updated"] == 1
     assert "PMGOLD" not in data["failed"]
-    # All other codes should be in failed
     assert len(data["failed"]) > 0
 
 
@@ -164,7 +171,7 @@ async def test_refresh_prices_404_unknown_account(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_refresh_prices_404_no_trades(client: AsyncClient, test_session_factory):
-    """Returns 404 when account has no stock trades."""
+    """Returns 404 when account exists but has no stock trades."""
     from app.models import Account
 
     async with test_session_factory() as session:
