@@ -140,7 +140,20 @@ function HoldingsTable({ accountId }) {
   const [refreshMsg, setRefreshMsg] = useState(null);
 
   useEffect(() => {
-    fetchHoldings(accountId).then(setHoldings).catch(console.error);
+    const load = async () => {
+      const h = await fetchHoldings(accountId);
+      setHoldings(h);
+      setRefreshing(true);
+      try {
+        const result = await refreshPrices(accountId);
+        setHoldings(result.holdings);
+      } catch {
+        // silent — holdings without live prices still shown
+      } finally {
+        setRefreshing(false);
+      }
+    };
+    load().catch(console.error);
   }, [accountId]);
 
   const handlePriceUpdated = (updated) => {
