@@ -92,6 +92,23 @@ export function GroupCard({ group, categories, onCategorise }) {
       {/* Expanded: individual transaction rows */}
       {expanded && visibleTxs.length > 0 && (
         <div className="border-t border-gray-100 divide-y divide-gray-50">
+          {/* Apply-to-all row */}
+          {visibleTxs.length > 1 && (
+            <div className="px-4 py-2.5 bg-gray-50 flex items-center gap-2">
+              <span className="text-xs text-gray-500 whitespace-nowrap flex-shrink-0">Apply to all:</span>
+              <select
+                defaultValue=""
+                onChange={e => { const v = e.target.value; if (v) { handleGroupPick(parseInt(v, 10)); e.target.value = ''; } }}
+                disabled={submittingAll}
+                className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 text-gray-600 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-40 disabled:opacity-40"
+              >
+                <option value="" disabled>— pick category for all</option>
+                {nonTransfer.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           {visibleTxs.map(tx => (
             <div key={tx.id} className="px-4 py-3">
               {/* Full description per row */}
