@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, TrendingUp, TrendingDown, PiggyBank, AlertCircle, Loader2,
 } from 'lucide-react';
@@ -11,6 +12,7 @@ import {
   fetchDashboardMonthly,
   fetchDashboardByCategory,
 } from '../api/dashboard';
+import { fetchInvestments } from '../api/investments';
 import { useTransactionStats } from '../contexts/TransactionStatsContext';
 import { useCategoriseDrawer } from '../contexts/CategoriseDrawerContext';
 import DateRangePicker from '../components/DateRangePicker';
@@ -41,6 +43,12 @@ const fmtMonth = (m) => {
   return `${label} '${y.slice(2)}`;
 };
 
+function monthBounds(ym) {
+  const [y, mo] = ym.split('-').map(Number);
+  const last = new Date(y, mo, 0).getDate();
+  return { from: `${ym}-01`, to: `${ym}-${String(last).padStart(2, '0')}` };
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function SummaryCard({ label, value, colour, icon: Icon, sub }) {
@@ -56,13 +64,16 @@ function SummaryCard({ label, value, colour, icon: Icon, sub }) {
   );
 }
 
-function CategoryChart({ title, data, emptyMsg }) {
+function CategoryChart({ title, data, emptyMsg, onBarClick }) {
   const top = data.slice(0, 14);
   const chartHeight = Math.max(200, top.length * 28 + 40);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5">
-      <h3 className="text-sm font-semibold text-gray-700 mb-4">{title}</h3>
+      <h3 className="text-sm font-semibold text-gray-700 mb-4">
+        {title}
+        {onBarClick && <span className="ml-2 text-xs text-gray-400 font-normal">click a bar to filter</span>}
+      </h3>
       {top.length === 0 ? (
         <p className="text-sm text-gray-400 py-10 text-center">{emptyMsg || 'No data'}</p>
       ) : (
@@ -71,6 +82,11 @@ function CategoryChart({ title, data, emptyMsg }) {
             layout="vertical"
             data={top}
             margin={{ top: 0, right: 72, bottom: 0, left: 4 }}
+            onClick={(e) => {
+              if (onBarClick && e && e.activePayload && e.activePayload.length > 0) {
+                onBarClick(e.activePayload[0].payload);
+              }
+            }}
           >
             <XAxis type="number" hide />
             <YAxis
@@ -85,7 +101,7 @@ function CategoryChart({ title, data, emptyMsg }) {
               formatter={(val) => [fmtCurrency(val), 'Amount']}
               contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
             />
-            <Bar dataKey="amount" radius={[0, 4, 4, 0]} maxBarSize={20}>
+            <Bar dataKey="amount" radius={[0, 4, 4, 0]} maxBarSize={20} style={{ cursor: 'pointer' }}>
               {top.map((entry, i) => (
                 <Cell key={i} fill={entry.colour || '#94a3b8'} />
               ))}
@@ -106,6 +122,7 @@ function CategoryChart({ title, data, emptyMsg }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const { stats } = useTransactionStats();
   const { open: openDrawer } = useCategoriseDrawer();
   const pct = stats && stats.total > 0 ? Math.round((stats.categorised / stats.total) * 100) : 0;
@@ -117,6 +134,7 @@ export default function Dashboard() {
   const [monthly, setMonthly] = useState([]);
   const [spendingCats, setSpendingCats] = useState([]);
   const [incomeCats, setIncomeCats] = useState([]);
+  const [investments, setInvestments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -125,16 +143,18 @@ export default function Dashboard() {
     setLoading(true);
     setError(null);
     try {
-      const [s, m, sc, ic] = await Promise.all([
+      const [s, m, sc, ic, inv] = await Promise.all([
         fetchDashboardSummary(dateFrom, dateTo),
         fetchDashboardMonthly(dateFrom, dateTo),
         fetchDashboardByCategory('Expense', dateFrom, dateTo),
         fetchDashboardByCategory('Income', dateFrom, dateTo),
+        fetchInvestments(),
       ]);
       setSummary(s);
       setMonthly(m);
       setSpendingCats(sc);
       setIncomeCats(ic);
+      setInvestments(inv);
     } catch (err) {
       console.error('Dashboard load failed:', err);
       setError('Failed to load dashboard data. Is the backend running?');
@@ -144,6 +164,21 @@ export default function Dashboard() {
   }, [dateFrom, dateTo]);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleMonthBarClick = useCallback((payload, txType) => {
+    if (!payload || !payload.month) return;
+    const { from, to } = monthBounds(payload.month);
+    const params = new URLSearchParams({ tx_type: txType, date_from: from, date_to: to });
+    navigate(`/transactions?${params.toString()}`);
+  }, [navigate]);
+
+  const handleCategoryBarClick = useCallback((payload, txType) => {
+    if (!payload || !payload.category_name) return;
+    const params = new URLSearchParams({ tx_type: txType, category_name: payload.category_name });
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+    navigate(`/transactions?${params.toString()}`);
+  }, [navigate, dateFrom, dateTo]);
 
   return (
     <div>
@@ -240,7 +275,7 @@ export default function Dashboard() {
             <div className="flex items-start justify-between mb-4">
               <div>
                 <h3 className="text-sm font-semibold text-gray-700">Monthly Income vs Expenses</h3>
-                <p className="text-xs text-gray-400 mt-0.5">Blue line = monthly savings (income − expenses)</p>
+                <p className="text-xs text-gray-400 mt-0.5">Blue line = monthly savings (income − expenses) · click a bar to filter transactions</p>
               </div>
             </div>
             {monthly.length === 0 ? (
@@ -269,8 +304,24 @@ export default function Dashboard() {
                     contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
                   />
                   <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
-                  <Bar dataKey="income" name="Income" fill="#4ade80" radius={[3, 3, 0, 0]} maxBarSize={48} />
-                  <Bar dataKey="expenses" name="Expenses" fill="#f87171" radius={[3, 3, 0, 0]} maxBarSize={48} />
+                  <Bar
+                    dataKey="income"
+                    name="Income"
+                    fill="#4ade80"
+                    radius={[3, 3, 0, 0]}
+                    maxBarSize={48}
+                    style={{ cursor: 'pointer' }}
+                    onClick={(payload) => handleMonthBarClick(payload, 'Income')}
+                  />
+                  <Bar
+                    dataKey="expenses"
+                    name="Expenses"
+                    fill="#f87171"
+                    radius={[3, 3, 0, 0]}
+                    maxBarSize={48}
+                    style={{ cursor: 'pointer' }}
+                    onClick={(payload) => handleMonthBarClick(payload, 'Expense')}
+                  />
                   <Line
                     dataKey="savings"
                     name="Savings"
@@ -286,18 +337,108 @@ export default function Dashboard() {
           </div>
 
           {/* Category breakdowns */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <CategoryChart
               title="Spending by Category"
               data={spendingCats}
               emptyMsg="No expenses in this period"
+              onBarClick={(payload) => handleCategoryBarClick(payload, 'Expense')}
             />
             <CategoryChart
               title="Income by Category"
               data={incomeCats}
               emptyMsg="No income in this period"
+              onBarClick={(payload) => handleCategoryBarClick(payload, 'Income')}
             />
           </div>
+
+          {/* Investments summary */}
+          {investments.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-gray-700">Investments</h3>
+                <button
+                  onClick={() => navigate('/investments')}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  View all
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-gray-500 border-b border-gray-100">
+                      <th className="text-left pb-2 font-medium">Account</th>
+                      <th className="text-right pb-2 font-medium">Contributed</th>
+                      <th className="text-right pb-2 font-medium">Current Value</th>
+                      <th className="text-right pb-2 font-medium">Total Gain</th>
+                      <th className="text-right pb-2 font-medium">Return</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {investments.map((acc) => {
+                      const hasReturn = acc.return_amount != null && acc.return_pct != null;
+                      const gainColour = hasReturn
+                        ? (acc.return_amount >= 0 ? 'text-green-600' : 'text-red-500')
+                        : 'text-gray-400';
+                      return (
+                        <tr key={acc.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="py-2.5 pr-4">
+                            <p className="font-medium text-gray-800">{acc.account_name}</p>
+                            <p className="text-xs text-gray-400">{acc.bank_name}</p>
+                          </td>
+                          <td className="py-2.5 text-right text-gray-700 tabular-nums">
+                            {new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(acc.total_contributed)}
+                          </td>
+                          <td className="py-2.5 text-right text-gray-700 tabular-nums">
+                            {acc.current_value != null
+                              ? new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(acc.current_value)
+                              : <span className="text-gray-400">—</span>}
+                          </td>
+                          <td className={`py-2.5 text-right tabular-nums ${gainColour}`}>
+                            {hasReturn
+                              ? new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(acc.return_amount)
+                              : <span className="text-gray-400">—</span>}
+                          </td>
+                          <td className={`py-2.5 text-right tabular-nums font-medium ${gainColour}`}>
+                            {hasReturn
+                              ? `${acc.return_pct >= 0 ? '+' : ''}${acc.return_pct.toFixed(2)}%`
+                              : <span className="text-gray-400">—</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  {investments.length > 1 && (() => {
+                    const totalContrib = investments.reduce((s, a) => s + a.total_contributed, 0);
+                    const allHaveValue = investments.every(a => a.current_value != null);
+                    const totalValue = allHaveValue ? investments.reduce((s, a) => s + a.current_value, 0) : null;
+                    const allHaveReturn = investments.every(a => a.return_amount != null);
+                    const totalGain = allHaveReturn ? investments.reduce((s, a) => s + a.return_amount, 0) : null;
+                    const totalPct = (allHaveReturn && totalContrib > 0) ? (totalGain / totalContrib) * 100 : null;
+                    const fmt = (v) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(v);
+                    return (
+                      <tfoot className="border-t border-gray-200">
+                        <tr className="text-xs">
+                          <td className="pt-2.5 font-medium text-gray-700">Total</td>
+                          <td className="pt-2.5 text-right tabular-nums font-medium text-gray-700">{fmt(totalContrib)}</td>
+                          <td className="pt-2.5 text-right tabular-nums font-medium text-gray-700">
+                            {totalValue != null ? fmt(totalValue) : <span className="text-gray-400">—</span>}
+                          </td>
+                          <td className={`pt-2.5 text-right tabular-nums font-medium ${totalGain != null ? (totalGain >= 0 ? 'text-green-600' : 'text-red-500') : 'text-gray-400'}`}>
+                            {totalGain != null ? fmt(totalGain) : '—'}
+                          </td>
+                          <td className={`pt-2.5 text-right tabular-nums font-medium ${totalPct != null ? (totalPct >= 0 ? 'text-green-600' : 'text-red-500') : 'text-gray-400'}`}>
+                            {totalPct != null ? `${totalPct >= 0 ? '+' : ''}${totalPct.toFixed(2)}%` : '—'}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    );
+                  })()}
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
