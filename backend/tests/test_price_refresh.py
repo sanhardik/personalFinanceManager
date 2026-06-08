@@ -4,7 +4,7 @@ Tests for POST /investments/{account_id}/refresh-prices.
 Network calls are mocked — these tests never hit the internet.
 """
 import io
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 
 import pytest
 from httpx import AsyncClient
@@ -28,19 +28,13 @@ async def _upload_superhero(client: AsyncClient):
     return next(a["id"] for a in accounts if a["bank_name"] == "Superhero")
 
 
-def _mock_yahoo_response(price: float):
-    """Build a mock httpx.Response that returns the given price."""
+def _alpaca_response(prices: dict[str, float]):
+    """Build a mock httpx.Response that returns Alpaca-format trade data."""
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {
-        "chart": {"result": [{"meta": {"regularMarketPrice": price}}]}
+        "trades": {code: {"p": price} for code, price in prices.items()}
     }
-    return mock_resp
-
-
-def _mock_yahoo_empty():
-    mock_resp = MagicMock()
-    mock_resp.status_code = 429
     return mock_resp
 
 
@@ -48,13 +42,20 @@ def _mock_yahoo_empty():
 
 @pytest.mark.asyncio
 async def test_fetch_prices_returns_dict_of_prices():
-    """fetch_prices returns {code: price} when Yahoo responds successfully."""
+    """fetch_prices returns {code: price} from Alpaca trade data."""
     from app.services.price_fetcher import fetch_prices
 
-    async def fake_fetch_one(client, code):
-        return {"PMGOLD": 52.10, "IVV": 89.50}.get(code)
+    mock_resp = _alpaca_response({"PMGOLD": 52.10, "IVV": 89.50})
 
-    with patch("app.services.price_fetcher._fetch_one", side_effect=fake_fetch_one):
+    with patch("app.config.settings.ALPACA_API_KEY", "test-key"), \
+         patch("app.config.settings.ALPACA_API_SECRET", "test-secret"), \
+         patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
         result = await fetch_prices(["PMGOLD", "IVV"])
 
     assert result["PMGOLD"] == pytest.approx(52.10)
@@ -62,59 +63,60 @@ async def test_fetch_prices_returns_dict_of_prices():
 
 
 @pytest.mark.asyncio
-async def test_fetch_prices_returns_none_for_unknown():
+async def test_fetch_prices_returns_none_when_no_credentials():
+    """fetch_prices returns all None when Alpaca keys are not configured."""
     from app.services.price_fetcher import fetch_prices
 
-    async def fake_fetch_one(client, code):
-        return None
+    with patch("app.services.price_fetcher.settings") as mock_settings:
+        mock_settings.ALPACA_API_KEY = ""
+        mock_settings.ALPACA_API_SECRET = ""
+        result = await fetch_prices(["PMGOLD", "IVV"])
 
-    with patch("app.services.price_fetcher._fetch_one", side_effect=fake_fetch_one):
-        result = await fetch_prices(["UNKNOWN"])
-
-    assert result["UNKNOWN"] is None
-
-
-@pytest.mark.asyncio
-async def test_fetch_one_tries_ax_suffix_first():
-    """_fetch_one tries CODE.AX before plain CODE."""
-    import httpx
-    from app.services.price_fetcher import _fetch_one
-
-    tickers_tried = []
-
-    async def fake_get(url, **kwargs):
-        ticker = url.split("/")[-1]
-        tickers_tried.append(ticker)
-        if ticker == "PMGOLD.AX":
-            return _mock_yahoo_response(52.10)
-        return _mock_yahoo_empty()
-
-    mock_client = AsyncMock(spec=httpx.AsyncClient)
-    mock_client.get = fake_get
-
-    price = await _fetch_one(mock_client, "PMGOLD")
-
-    assert price == pytest.approx(52.10)
-    assert tickers_tried[0] == "PMGOLD.AX"
+    assert result == {"PMGOLD": None, "IVV": None}
 
 
 @pytest.mark.asyncio
-async def test_fetch_one_falls_back_to_plain_ticker():
-    """_fetch_one returns price from plain ticker when .AX has no data."""
-    import httpx
-    from app.services.price_fetcher import _fetch_one
+async def test_fetch_prices_returns_none_for_unknown_ticker():
+    """Tickers not in Alpaca response get None (e.g. ASX-only stocks)."""
+    from app.services.price_fetcher import fetch_prices
 
-    async def fake_get(url, **kwargs):
-        ticker = url.split("/")[-1]
-        if ticker == "IVV":
-            return _mock_yahoo_response(610.25)
-        return _mock_yahoo_empty()
+    mock_resp = _alpaca_response({"IVV": 540.00})  # PMGOLD not returned
 
-    mock_client = AsyncMock(spec=httpx.AsyncClient)
-    mock_client.get = fake_get
+    with patch("app.config.settings.ALPACA_API_KEY", "test-key"), \
+         patch("app.config.settings.ALPACA_API_SECRET", "test-secret"), \
+         patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
 
-    price = await _fetch_one(mock_client, "IVV")
-    assert price == pytest.approx(610.25)
+        result = await fetch_prices(["PMGOLD", "IVV"])
+
+    assert result["IVV"] == pytest.approx(540.00)
+    assert result["PMGOLD"] is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_prices_handles_403():
+    """Returns all None on invalid credentials."""
+    from app.services.price_fetcher import fetch_prices
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 403
+
+    with patch("app.config.settings.ALPACA_API_KEY", "bad-key"), \
+         patch("app.config.settings.ALPACA_API_SECRET", "bad-secret"), \
+         patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        result = await fetch_prices(["PMGOLD"])
+
+    assert result["PMGOLD"] is None
 
 
 # ── refresh-prices endpoint tests ─────────────────────────────────────────────
@@ -134,7 +136,6 @@ async def test_refresh_prices_updates_holdings(client: AsyncClient):
     data = resp.json()
     assert data["updated"] > 0
     assert data["failed"] == []
-    assert len(data["holdings"]) > 0
     pmgold = next((h for h in data["holdings"] if h["security_code"] == "PMGOLD"), None)
     assert pmgold is not None
     assert pmgold["current_price"] == pytest.approx(55.00)
@@ -142,7 +143,7 @@ async def test_refresh_prices_updates_holdings(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_refresh_prices_partial_failure(client: AsyncClient):
-    """Failed tickers are listed in 'failed'; successful ones are saved."""
+    """Failed tickers (not in Alpaca) are listed in 'failed'."""
     acc_id = await _upload_superhero(client)
 
     async def fake_fetch_prices(codes):
@@ -160,12 +161,7 @@ async def test_refresh_prices_partial_failure(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_refresh_prices_404_unknown_account(client: AsyncClient):
-    async def fake_fetch_prices(codes):
-        return {}
-
-    with patch("app.routers.investments.fetch_prices", side_effect=fake_fetch_prices):
-        resp = await client.post("/investments/9999/refresh-prices")
-
+    resp = await client.post("/investments/9999/refresh-prices")
     assert resp.status_code == 404
 
 
@@ -192,7 +188,7 @@ async def test_refresh_prices_404_no_trades(client: AsyncClient, test_session_fa
 
 @pytest.mark.asyncio
 async def test_refresh_prices_result_shape(client: AsyncClient):
-    """Response shape: updated, failed, results[{security_code, price, error}], holdings."""
+    """Response has updated, failed, results, and holdings fields."""
     acc_id = await _upload_superhero(client)
 
     async def fake_fetch_prices(codes):
