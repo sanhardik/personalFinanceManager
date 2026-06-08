@@ -31,6 +31,7 @@ from app.schemas import (
     StockTradeResponse,
 )
 
+
 router = APIRouter(prefix="/investments", tags=["investments"])
 
 
@@ -412,7 +413,8 @@ async def refresh_prices(
     Saves a new StockValuation row for each successful lookup.
     """
     acc_result = await db.execute(select(Account).where(Account.id == account_id))
-    if not acc_result.scalar_one_or_none():
+    acc = acc_result.scalar_one_or_none()
+    if not acc:
         raise HTTPException(status_code=404, detail="Account not found")
 
     # Get all unique security codes with holdings
@@ -450,9 +452,18 @@ async def refresh_prices(
     await db.commit()
     holdings = await get_holdings(account_id=account_id, db=db)
 
+    # Auto-update account current_value from sum of holding values
+    total_value = sum(h.current_value for h in holdings if h.current_value is not None)
+    if total_value > 0:
+        acc.current_value = total_value
+        acc.current_value_at = valuation_date
+        await db.commit()
+        await db.refresh(acc)
+
     return PriceRefreshResponse(
         updated=updated,
         failed=failed,
         results=results,
         holdings=holdings,
+        account=await _build_investment_response(acc, db),
     )

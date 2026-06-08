@@ -428,6 +428,7 @@ class PriceRefreshResponse(BaseModel):
     failed: list[str]
     results: list[PriceRefreshResult]
     holdings: list["HoldingRow"]
+    account: "InvestmentResponse"
 
 
 # ── Upload ───────────────────────────────────────────────────

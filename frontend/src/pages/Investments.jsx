@@ -132,7 +132,7 @@ function PriceEditor({ accountId, holding, onUpdated }) {
 
 // ── Holdings table ────────────────────────────────────────────────────────────
 
-function HoldingsTable({ accountId }) {
+function HoldingsTable({ accountId, onAccountUpdated }) {
   const [holdings, setHoldings] = useState(null);
   const [expanded, setExpanded] = useState(null); // security_code with open trades panel
   const [trades, setTrades] = useState({});
@@ -147,6 +147,7 @@ function HoldingsTable({ accountId }) {
       try {
         const result = await refreshPrices(accountId);
         setHoldings(result.holdings);
+        if (result.account && onAccountUpdated) onAccountUpdated(result.account);
       } catch {
         // silent — holdings without live prices still shown
       } finally {
@@ -166,6 +167,7 @@ function HoldingsTable({ accountId }) {
     try {
       const result = await refreshPrices(accountId);
       setHoldings(result.holdings);
+      if (result.account && onAccountUpdated) onAccountUpdated(result.account);
       const msg = result.failed.length === 0
         ? `Updated ${result.updated} price${result.updated !== 1 ? 's' : ''}`
         : `Updated ${result.updated}, failed: ${result.failed.join(', ')}`;
@@ -607,7 +609,7 @@ function InvestmentCard({ investment, onUpdated, onDeleted }) {
       {isSuperhero && showHoldings && (
         <div className="mt-4 border-t border-gray-100 pt-4">
           <PortfolioCharts accountId={investment.id} />
-          <HoldingsTable accountId={investment.id} />
+          <HoldingsTable accountId={investment.id} onAccountUpdated={onUpdated} />
         </div>
       )}
     </div>
