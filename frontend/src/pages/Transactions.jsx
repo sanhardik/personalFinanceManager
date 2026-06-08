@@ -31,14 +31,15 @@ export default function Transactions() {
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState({ total: 0, page: 1, pages: 0, per_page: 50 });
 
-  // Filters — seed account_id from URL param (e.g. from "Categorise now" on upload)
+  // Filters — seed from URL params (e.g. from Dashboard chart clicks or upload flow)
   const [accountId, setAccountId] = useState(() => searchParams.get('account_id') || '');
-  const [txType, setTxType] = useState('');
+  const [txType, setTxType] = useState(() => searchParams.get('tx_type') || '');
   const [search, setSearch] = useState('');
   const [searchDebounce, setSearchDebounce] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [pendingCategoryName, setPendingCategoryName] = useState(() => searchParams.get('category_name') || '');
+  const [dateFrom, setDateFrom] = useState(() => searchParams.get('date_from') || '');
+  const [dateTo, setDateTo] = useState(() => searchParams.get('date_to') || '');
 
   // Inbox mode
   const [inboxMode, setInboxMode] = useState(false);
@@ -104,7 +105,18 @@ export default function Transactions() {
 
   useEffect(() => {
     fetchAccounts().then(setAccounts).catch(console.error);
-    fetchCategories().then(setCategories).catch(console.error);
+    fetchCategories().then((cats) => {
+      setCategories(cats);
+      if (pendingCategoryName) {
+        const match = cats.find(
+          (c) => c.name.toLowerCase() === pendingCategoryName.toLowerCase()
+        );
+        if (match) setCategoryFilter(String(match.id));
+        setPendingCategoryName('');
+      }
+    }).catch(console.error);
+  // pendingCategoryName intentionally only read once on mount — categories load triggers resolution
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Load groups when entering inbox mode

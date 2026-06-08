@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, TrendingUp, TrendingDown, PiggyBank, AlertCircle, Loader2,
 } from 'lucide-react';
@@ -41,6 +42,12 @@ const fmtMonth = (m) => {
   return `${label} '${y.slice(2)}`;
 };
 
+function monthBounds(ym) {
+  const [y, mo] = ym.split('-').map(Number);
+  const last = new Date(y, mo, 0).getDate();
+  return { from: `${ym}-01`, to: `${ym}-${String(last).padStart(2, '0')}` };
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function SummaryCard({ label, value, colour, icon: Icon, sub }) {
@@ -56,13 +63,16 @@ function SummaryCard({ label, value, colour, icon: Icon, sub }) {
   );
 }
 
-function CategoryChart({ title, data, emptyMsg }) {
+function CategoryChart({ title, data, emptyMsg, onBarClick }) {
   const top = data.slice(0, 14);
   const chartHeight = Math.max(200, top.length * 28 + 40);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5">
-      <h3 className="text-sm font-semibold text-gray-700 mb-4">{title}</h3>
+      <h3 className="text-sm font-semibold text-gray-700 mb-4">
+        {title}
+        {onBarClick && <span className="ml-2 text-xs text-gray-400 font-normal">click a bar to filter</span>}
+      </h3>
       {top.length === 0 ? (
         <p className="text-sm text-gray-400 py-10 text-center">{emptyMsg || 'No data'}</p>
       ) : (
@@ -71,6 +81,11 @@ function CategoryChart({ title, data, emptyMsg }) {
             layout="vertical"
             data={top}
             margin={{ top: 0, right: 72, bottom: 0, left: 4 }}
+            onClick={(e) => {
+              if (onBarClick && e && e.activePayload && e.activePayload.length > 0) {
+                onBarClick(e.activePayload[0].payload);
+              }
+            }}
           >
             <XAxis type="number" hide />
             <YAxis
@@ -85,7 +100,7 @@ function CategoryChart({ title, data, emptyMsg }) {
               formatter={(val) => [fmtCurrency(val), 'Amount']}
               contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
             />
-            <Bar dataKey="amount" radius={[0, 4, 4, 0]} maxBarSize={20}>
+            <Bar dataKey="amount" radius={[0, 4, 4, 0]} maxBarSize={20} style={{ cursor: 'pointer' }}>
               {top.map((entry, i) => (
                 <Cell key={i} fill={entry.colour || '#94a3b8'} />
               ))}
@@ -106,6 +121,7 @@ function CategoryChart({ title, data, emptyMsg }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const { stats } = useTransactionStats();
   const { open: openDrawer } = useCategoriseDrawer();
   const pct = stats && stats.total > 0 ? Math.round((stats.categorised / stats.total) * 100) : 0;
@@ -144,6 +160,21 @@ export default function Dashboard() {
   }, [dateFrom, dateTo]);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleMonthBarClick = useCallback((payload, txType) => {
+    if (!payload || !payload.month) return;
+    const { from, to } = monthBounds(payload.month);
+    const params = new URLSearchParams({ tx_type: txType, date_from: from, date_to: to });
+    navigate(`/transactions?${params.toString()}`);
+  }, [navigate]);
+
+  const handleCategoryBarClick = useCallback((payload, txType) => {
+    if (!payload || !payload.category_name) return;
+    const params = new URLSearchParams({ tx_type: txType, category_name: payload.category_name });
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+    navigate(`/transactions?${params.toString()}`);
+  }, [navigate, dateFrom, dateTo]);
 
   return (
     <div>
@@ -240,7 +271,7 @@ export default function Dashboard() {
             <div className="flex items-start justify-between mb-4">
               <div>
                 <h3 className="text-sm font-semibold text-gray-700">Monthly Income vs Expenses</h3>
-                <p className="text-xs text-gray-400 mt-0.5">Blue line = monthly savings (income − expenses)</p>
+                <p className="text-xs text-gray-400 mt-0.5">Blue line = monthly savings (income − expenses) · click a bar to filter transactions</p>
               </div>
             </div>
             {monthly.length === 0 ? (
@@ -269,8 +300,24 @@ export default function Dashboard() {
                     contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
                   />
                   <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
-                  <Bar dataKey="income" name="Income" fill="#4ade80" radius={[3, 3, 0, 0]} maxBarSize={48} />
-                  <Bar dataKey="expenses" name="Expenses" fill="#f87171" radius={[3, 3, 0, 0]} maxBarSize={48} />
+                  <Bar
+                    dataKey="income"
+                    name="Income"
+                    fill="#4ade80"
+                    radius={[3, 3, 0, 0]}
+                    maxBarSize={48}
+                    style={{ cursor: 'pointer' }}
+                    onClick={(payload) => handleMonthBarClick(payload, 'Income')}
+                  />
+                  <Bar
+                    dataKey="expenses"
+                    name="Expenses"
+                    fill="#f87171"
+                    radius={[3, 3, 0, 0]}
+                    maxBarSize={48}
+                    style={{ cursor: 'pointer' }}
+                    onClick={(payload) => handleMonthBarClick(payload, 'Expense')}
+                  />
                   <Line
                     dataKey="savings"
                     name="Savings"
@@ -291,11 +338,13 @@ export default function Dashboard() {
               title="Spending by Category"
               data={spendingCats}
               emptyMsg="No expenses in this period"
+              onBarClick={(payload) => handleCategoryBarClick(payload, 'Expense')}
             />
             <CategoryChart
               title="Income by Category"
               data={incomeCats}
               emptyMsg="No income in this period"
+              onBarClick={(payload) => handleCategoryBarClick(payload, 'Income')}
             />
           </div>
         </>
