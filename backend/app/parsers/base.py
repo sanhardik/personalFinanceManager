@@ -57,6 +57,7 @@ class ParsedStockTrade:
     brokerage: float
     gst: float
     tax: float
+    currency: str = "AUD"   # "AUD" or "USD" — determined at price-fetch time
 
 
 @dataclass

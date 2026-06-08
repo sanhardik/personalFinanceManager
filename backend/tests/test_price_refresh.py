@@ -31,7 +31,7 @@ async def _upload_superhero(client: AsyncClient):
 # ── _fetch_price_sync unit tests ──────────────────────────────────────────────
 
 def test_fetch_price_sync_tries_ax_suffix_first():
-    """Tries CODE.AX before plain CODE."""
+    """Tries CODE.AX before plain CODE; returns (price, 'AUD') on .AX success."""
     from app.services.price_fetcher import _fetch_price_sync
 
     tickers_tried = []
@@ -47,14 +47,17 @@ def test_fetch_price_sync_tries_ax_suffix_first():
 
     with patch("yfinance.Ticker", FakeTicker), \
          patch("curl_cffi.requests.Session"):
-        price = _fetch_price_sync("PMGOLD")
+        result = _fetch_price_sync("PMGOLD")
 
+    assert result is not None
+    price, currency = result
     assert price == pytest.approx(52.10)
+    assert currency == "AUD"
     assert tickers_tried[0] == "PMGOLD.AX"
 
 
 def test_fetch_price_sync_falls_back_to_plain_ticker():
-    """Falls back to plain CODE when .AX returns no data."""
+    """Falls back to plain CODE when .AX returns no data; returns (price, 'USD')."""
     from app.services.price_fetcher import _fetch_price_sync
 
     class FakeTicker:
@@ -66,9 +69,12 @@ def test_fetch_price_sync_falls_back_to_plain_ticker():
 
     with patch("yfinance.Ticker", FakeTicker), \
          patch("curl_cffi.requests.Session"):
-        price = _fetch_price_sync("IVV")
+        result = _fetch_price_sync("IVV")
 
+    assert result is not None
+    price, currency = result
     assert price == pytest.approx(610.25)
+    assert currency == "USD"
 
 
 def test_fetch_price_sync_returns_none_when_not_found():
@@ -83,9 +89,9 @@ def test_fetch_price_sync_returns_none_when_not_found():
 
     with patch("yfinance.Ticker", FakeTicker), \
          patch("curl_cffi.requests.Session"):
-        price = _fetch_price_sync("UNKNOWN")
+        result = _fetch_price_sync("UNKNOWN")
 
-    assert price is None
+    assert result is None
 
 
 # ── fetch_prices async wrapper ─────────────────────────────────────────────────
@@ -95,13 +101,13 @@ async def test_fetch_prices_returns_dict():
     from app.services.price_fetcher import fetch_prices
 
     async def fake_to_thread(fn, code):
-        return {"PMGOLD": 52.10, "IVV": 610.25}.get(code)
+        return {"PMGOLD": (52.10, "AUD"), "IVV": (610.25, "USD")}.get(code)
 
     with patch("app.services.price_fetcher.asyncio.to_thread", side_effect=fake_to_thread):
         result = await fetch_prices(["PMGOLD", "IVV"])
 
-    assert result["PMGOLD"] == pytest.approx(52.10)
-    assert result["IVV"] == pytest.approx(610.25)
+    assert result["PMGOLD"] == (pytest.approx(52.10), "AUD")
+    assert result["IVV"] == (pytest.approx(610.25), "USD")
 
 
 @pytest.mark.asyncio
@@ -124,7 +130,7 @@ async def test_refresh_prices_updates_holdings(client: AsyncClient):
     acc_id = await _upload_superhero(client)
 
     async def fake_fetch(codes):
-        return {c: 55.00 for c in codes}
+        return {c: (55.00, "AUD") for c in codes}
 
     with patch("app.routers.investments.fetch_prices", side_effect=fake_fetch):
         resp = await client.post(f"/investments/{acc_id}/refresh-prices")
@@ -142,7 +148,7 @@ async def test_refresh_prices_partial_failure(client: AsyncClient):
     acc_id = await _upload_superhero(client)
 
     async def fake_fetch(codes):
-        return {c: (50.00 if c == "PMGOLD" else None) for c in codes}
+        return {c: ((50.00, "AUD") if c == "PMGOLD" else None) for c in codes}
 
     with patch("app.routers.investments.fetch_prices", side_effect=fake_fetch):
         resp = await client.post(f"/investments/{acc_id}/refresh-prices")
@@ -184,7 +190,7 @@ async def test_refresh_prices_result_shape(client: AsyncClient):
     acc_id = await _upload_superhero(client)
 
     async def fake_fetch(codes):
-        return {c: 42.00 for c in codes}
+        return {c: (42.00, "AUD") for c in codes}
 
     with patch("app.routers.investments.fetch_prices", side_effect=fake_fetch):
         resp = await client.post(f"/investments/{acc_id}/refresh-prices")
@@ -193,4 +199,4 @@ async def test_refresh_prices_result_shape(client: AsyncClient):
     for key in ("updated", "failed", "results", "holdings"):
         assert key in data
     for r in data["results"]:
-        assert "security_code" in r and "price" in r
+        assert "security_code" in r and "price" in r and "currency" in r

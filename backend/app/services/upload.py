@@ -271,6 +271,7 @@ async def process_stock_csv_upload(
             brokerage=trade.brokerage,
             gst=trade.gst,
             tax=trade.tax,
+            currency=trade.currency,
             trade_hash=trade_hash,
         ))
         inserted += 1

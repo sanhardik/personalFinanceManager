@@ -297,6 +297,7 @@ class StockTrade(Base):
     brokerage: Mapped[float] = mapped_column(Float(precision=2), default=0.0, nullable=False)
     gst: Mapped[float] = mapped_column(Float(precision=2), default=0.0, nullable=False)
     tax: Mapped[float] = mapped_column(Float(precision=2), default=0.0, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="AUD")
     trade_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
@@ -326,13 +327,14 @@ class StockValuation(Base):
     account_id: Mapped[int] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=False)
     security_code: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     price: Mapped[float] = mapped_column(Float(precision=4), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="AUD")
     valuation_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     account: Mapped["Account"] = relationship("Account")
 
     def __repr__(self) -> str:
-        return f"<StockValuation {self.security_code} @ {self.price} on {self.valuation_date}>"
+        return f"<StockValuation {self.security_code} @ {self.price} ({self.currency}) on {self.valuation_date}>"
 
 
 class SuggestedRule(Base):

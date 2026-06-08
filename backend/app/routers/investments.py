@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Account, StockTrade, StockValuation, Transaction
-from app.services.price_fetcher import fetch_prices
+from app.services.price_fetcher import fetch_aud_usd_rate, fetch_prices
 from app.schemas import (
     DividendRow,
     HoldingPriceUpdate,
@@ -92,9 +92,13 @@ def _compute_arr(cost_basis: float, current_value: float, first_buy_date: date) 
     return arr, years < 1
 
 
-async def _get_latest_prices(account_id: int, db: AsyncSession) -> dict[str, float]:
-    """Return {security_code: latest_price} from stock_valuations."""
-    # Subquery: latest valuation per security for this account
+async def _get_latest_valuations(account_id: int, db: AsyncSession) -> dict[str, dict]:
+    """
+    Return {security_code: {"price": float, "currency": str}} from stock_valuations.
+
+    The price is the raw stored price (USD for US stocks, AUD for ASX).
+    Currency conversion to AUD must be done by the caller.
+    """
     subq = (
         select(
             StockValuation.security_code,
@@ -105,7 +109,7 @@ async def _get_latest_prices(account_id: int, db: AsyncSession) -> dict[str, flo
         .subquery()
     )
     result = await db.execute(
-        select(StockValuation.security_code, StockValuation.price)
+        select(StockValuation.security_code, StockValuation.price, StockValuation.currency)
         .join(
             subq,
             (StockValuation.security_code == subq.c.security_code)
@@ -113,7 +117,7 @@ async def _get_latest_prices(account_id: int, db: AsyncSession) -> dict[str, flo
         )
         .where(StockValuation.account_id == account_id)
     )
-    return {row[0]: float(row[1]) for row in result.all()}
+    return {row[0]: {"price": float(row[1]), "currency": row[2]} for row in result.all()}
 
 
 # ── Account-level endpoints ────────────────────────────────────────────────────
@@ -245,7 +249,14 @@ async def get_holdings(
     )
     rows = agg.all()
 
-    prices = await _get_latest_prices(account_id, db)
+    valuations = await _get_latest_valuations(account_id, db)
+
+    # Fetch FX rate only if there are any USD-priced holdings
+    has_usd = any(v["currency"] == "USD" for v in valuations.values())
+    aud_usd_rate: float | None = None
+    if has_usd:
+        aud_usd_rate = await fetch_aud_usd_rate()
+
     holdings: list[HoldingRow] = []
 
     for row in rows:
@@ -256,8 +267,20 @@ async def get_holdings(
         first_buy = row.first_buy_date.date() if row.first_buy_date else None
 
         avg_cost = (cost / qty) if qty > 0 else None
-        current_price = prices.get(row.security_code)
-        current_value = (current_price * qty) if current_price is not None else None
+
+        valuation = valuations.get(row.security_code)
+        currency = "AUD"
+        current_price_aud: float | None = None
+
+        if valuation is not None:
+            raw_price = valuation["price"]
+            currency = valuation["currency"]
+            if currency == "USD" and aud_usd_rate:
+                current_price_aud = raw_price / aud_usd_rate
+            else:
+                current_price_aud = raw_price
+
+        current_value = (current_price_aud * qty) if current_price_aud is not None else None
         unrealised_gain = (current_value - cost) if current_value is not None else None
         unrealised_gain_pct = (
             (unrealised_gain / cost * 100) if (unrealised_gain is not None and cost > 0) else None
@@ -276,7 +299,7 @@ async def get_holdings(
             quantity_held=qty,
             avg_cost_per_unit=avg_cost,
             cost_basis=cost,
-            current_price=current_price,
+            current_price=current_price_aud,
             current_value=current_value,
             unrealised_gain=unrealised_gain,
             unrealised_gain_pct=unrealised_gain_pct,
@@ -287,6 +310,7 @@ async def get_holdings(
             arr_short_hold=arr_short,
             first_buy_date=first_buy,
             brokerage_total=brok,
+            currency=currency,
         ))
 
     return holdings
@@ -398,6 +422,7 @@ async def update_holding_price(
         account_id=account_id,
         security_code=security_code.upper(),
         price=body.price,
+        currency="AUD",
         valuation_date=datetime.utcnow(),
     )
     db.add(valuation)
@@ -438,21 +463,29 @@ async def refresh_prices(
 
     price_map = await fetch_prices(codes)
 
+    # Fetch FX rate once if any USD prices were returned
+    has_usd = any(v is not None and v[1] == "USD" for v in price_map.values())
+    aud_usd_rate: float | None = None
+    if has_usd:
+        aud_usd_rate = await fetch_aud_usd_rate()
+
     results: list[PriceRefreshResult] = []
     updated = 0
     failed: list[str] = []
 
     valuation_date = datetime.now(timezone.utc)
 
-    for code, price in price_map.items():
-        if price is not None:
+    for code, price_info in price_map.items():
+        if price_info is not None:
+            price, currency = price_info
             db.add(StockValuation(
                 account_id=account_id,
                 security_code=code,
                 price=price,
+                currency=currency,
                 valuation_date=valuation_date,
             ))
-            results.append(PriceRefreshResult(security_code=code, price=price))
+            results.append(PriceRefreshResult(security_code=code, price=price, currency=currency))
             updated += 1
         else:
             results.append(PriceRefreshResult(security_code=code, price=None, error="not found"))
@@ -461,7 +494,7 @@ async def refresh_prices(
     await db.commit()
     holdings = await get_holdings(account_id=account_id, db=db)
 
-    # Auto-update account current_value from sum of holding values
+    # Auto-update account current_value from sum of holding values (all in AUD)
     total_value = sum(h.current_value for h in holdings if h.current_value is not None)
     if total_value > 0:
         acc.current_value = total_value
@@ -475,4 +508,5 @@ async def refresh_prices(
         results=results,
         holdings=holdings,
         account=await _build_investment_response(acc, db),
+        aud_usd_rate=aud_usd_rate,
     )

@@ -138,6 +138,7 @@ function HoldingsTable({ accountId, onAccountUpdated }) {
   const [trades, setTrades] = useState({});
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState(null);
+  const [audUsdRate, setAudUsdRate] = useState(null);
 
   useEffect(() => {
     const load = async () => {
@@ -148,6 +149,7 @@ function HoldingsTable({ accountId, onAccountUpdated }) {
         const result = await refreshPrices(accountId);
         setHoldings(result.holdings);
         if (result.account && onAccountUpdated) onAccountUpdated(result.account);
+        if (result.aud_usd_rate != null) setAudUsdRate(result.aud_usd_rate);
       } catch {
         // silent — holdings without live prices still shown
       } finally {
@@ -168,6 +170,7 @@ function HoldingsTable({ accountId, onAccountUpdated }) {
       const result = await refreshPrices(accountId);
       setHoldings(result.holdings);
       if (result.account && onAccountUpdated) onAccountUpdated(result.account);
+      if (result.aud_usd_rate != null) setAudUsdRate(result.aud_usd_rate);
       const msg = result.failed.length === 0
         ? `Updated ${result.updated} price${result.updated !== 1 ? 's' : ''}`
         : `Updated ${result.updated}, failed: ${result.failed.join(', ')}`;
@@ -217,14 +220,21 @@ function HoldingsTable({ accountId, onAccountUpdated }) {
             {refreshMsg.text}
           </span>
         )}
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
-          {refreshing ? 'Refreshing…' : 'Refresh Prices'}
-        </button>
+        <div className="flex flex-col items-end gap-0.5">
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
+            {refreshing ? 'Refreshing…' : 'Refresh Prices'}
+          </button>
+          {audUsdRate != null && (
+            <span className="text-[10px] text-gray-400">
+              Rate: 1 AUD = {audUsdRate.toFixed(4)} USD
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Portfolio summary row */}
@@ -267,7 +277,14 @@ function HoldingsTable({ accountId, onAccountUpdated }) {
                   <td className="px-3 py-2 text-right text-gray-600">{h.avg_cost_per_unit != null ? fmt(h.avg_cost_per_unit) : '—'}</td>
                   <td className="px-3 py-2 text-right text-gray-800 font-medium">{fmt(h.cost_basis)}</td>
                   <td className="px-3 py-2 text-right">
-                    <PriceEditor accountId={accountId} holding={h} onUpdated={handlePriceUpdated} />
+                    <div className="flex items-center justify-end gap-1">
+                      <PriceEditor accountId={accountId} holding={h} onUpdated={handlePriceUpdated} />
+                      {h.currency === 'USD' && h.current_price != null && (
+                        <span className="text-[9px] font-medium px-1 py-0.5 rounded bg-blue-50 text-blue-500 whitespace-nowrap">
+                          USD→AUD
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-3 py-2 text-right">
                     <GainCell value={h.unrealised_gain} pct={h.unrealised_gain_pct} />
