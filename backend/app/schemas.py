@@ -370,6 +370,7 @@ class StockTradeResponse(BaseModel):
     brokerage: float
     gst: float
     tax: float
+    currency: str = "AUD"
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -393,6 +394,7 @@ class HoldingRow(BaseModel):
     arr_short_hold: bool
     first_buy_date: date | None
     brokerage_total: float
+    currency: str = "AUD"
 
 
 class DividendRow(BaseModel):
@@ -419,6 +421,7 @@ class PriceRefreshResult(BaseModel):
     """Per-security result from a price-refresh call."""
     security_code: str
     price: float | None
+    currency: str = "AUD"
     error: str | None = None
 
 
@@ -429,6 +432,7 @@ class PriceRefreshResponse(BaseModel):
     results: list[PriceRefreshResult]
     holdings: list["HoldingRow"]
     account: "InvestmentResponse"
+    aud_usd_rate: float | None = None
 
 
 # ── Upload ───────────────────────────────────────────────────

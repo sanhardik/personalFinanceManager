@@ -141,6 +141,23 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Migration: transfer_account_id on rules failed (non-fatal): %s", e)
 
+        # Schema migrations — add currency column to stock_trades + stock_valuations
+        try:
+            async with engine.begin() as conn:
+                for table in ("stock_trades", "stock_valuations"):
+                    exists = await conn.execute(text(
+                        "SELECT COUNT(*) FROM information_schema.COLUMNS "
+                        "WHERE TABLE_SCHEMA = DATABASE() "
+                        "AND TABLE_NAME = :tbl AND COLUMN_NAME = 'currency'"
+                    ), {"tbl": table})
+                    if exists.scalar() == 0:
+                        await conn.execute(text(
+                            f"ALTER TABLE {table} ADD COLUMN currency VARCHAR(3) NOT NULL DEFAULT 'AUD'"
+                        ))
+                        logger.info("Migration: added currency to %s", table)
+        except Exception as e:
+            logger.warning("Migration: currency columns failed (non-fatal): %s", e)
+
         # Schema migration — fix suggested_rules.promoted_rule_id FK to ON DELETE SET NULL
         try:
             async with engine.begin() as conn:
