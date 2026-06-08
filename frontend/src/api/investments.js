@@ -9,6 +9,9 @@ export const updateInvestmentValue = (id, currentValue) =>
 export const updateContributed = (id, contributed) =>
   api.patch(`/investments/${id}/value`, { contributed }).then(r => r.data);
 
+export const clearContributed = (id) =>
+  api.patch(`/investments/${id}/value`, { clear_contributed: true }).then(r => r.data);
+
 export const fetchHoldings = (accountId) =>
   api.get(`/investments/${accountId}/holdings`).then(r => r.data);
 

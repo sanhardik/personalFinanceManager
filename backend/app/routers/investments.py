@@ -173,7 +173,8 @@ async def update_current_value(
         raise HTTPException(status_code=404, detail="Investment account not found")
 
     value = body.get("current_value")
-    contributed = body.get("contributed")
+    contributed = body.get("contributed")          # float = manual override
+    clear_contributed = body.get("clear_contributed", False)  # True = reset to auto
 
     if value is not None:
         if not isinstance(value, (int, float)):
@@ -181,13 +182,15 @@ async def update_current_value(
         acc.current_value = float(value)
         acc.current_value_at = datetime.utcnow()
 
-    if contributed is not None:
+    if clear_contributed:
+        acc.contributed = None
+    elif contributed is not None:
         if not isinstance(contributed, (int, float)):
             raise HTTPException(status_code=422, detail="contributed must be a number")
         acc.contributed = float(contributed)
 
-    if value is None and contributed is None:
-        raise HTTPException(status_code=422, detail="Provide current_value or contributed")
+    if value is None and contributed is None and not clear_contributed:
+        raise HTTPException(status_code=422, detail="Provide current_value, contributed, or clear_contributed")
 
     await db.commit()
     await db.refresh(acc)

@@ -8,7 +8,7 @@ import {
   LineChart, Line, PieChart, Pie, Cell, ResponsiveContainer,
 } from 'recharts';
 import {
-  fetchInvestments, updateInvestmentValue, updateContributed, fetchHoldings,
+  fetchInvestments, updateInvestmentValue, updateContributed, clearContributed, fetchHoldings,
   fetchTrades, fetchDividends, fetchPerformance, patchHoldingPrice,
   refreshPrices,
 } from '../api/investments';
@@ -493,8 +493,6 @@ function InvestmentCard({ investment, onUpdated, onDeleted }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const isSuperhero = investment.bank_name === 'Superhero';
-  // contributed is auto-derived unless manually overridden
-  const contributedIsAuto = investment.contributed_override == null;
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -532,10 +530,27 @@ function InvestmentCard({ investment, onUpdated, onDeleted }) {
 
   const cancel = () => { setEditing(false); setError(null); };
 
-  const startEditContributed = () => {
-    setContributedVal(investment.contributed_override != null ? String(investment.contributed_override) : String(investment.total_contributed || ''));
-    setEditingContributed(true);
-    setError(null);
+  // "auto" = derive from bank transfers; "manual" = acc.contributed_override
+  const contributedMode = investment.contributed_override != null ? 'manual' : 'auto';
+
+  const handleModeChange = async (newMode) => {
+    if (newMode === 'auto') {
+      setSavingContributed(true);
+      try {
+        const updated = await clearContributed(investment.id);
+        onUpdated(updated);
+        setEditingContributed(false);
+      } catch {
+        setError('Failed to reset');
+      } finally {
+        setSavingContributed(false);
+      }
+    } else {
+      // switching to manual — open the input pre-filled with current total
+      setContributedVal(String(investment.total_contributed || ''));
+      setEditingContributed(true);
+      setError(null);
+    }
   };
 
   const saveContributed = async () => {
@@ -553,7 +568,11 @@ function InvestmentCard({ investment, onUpdated, onDeleted }) {
     }
   };
 
-  const cancelContributed = () => { setEditingContributed(false); setError(null); };
+  const cancelContributed = () => {
+    setEditingContributed(false);
+    setError(null);
+    // if they cancel while in manual mode but no override was ever saved, revert selector to auto display
+  };
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -580,13 +599,24 @@ function InvestmentCard({ investment, onUpdated, onDeleted }) {
       </div>
 
       <div className="space-y-3">
+        {/* Contribution source selector — only for non-Superhero accounts */}
+        {!isSuperhero && (
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-400">Contribution source</span>
+            <select
+              value={contributedMode}
+              onChange={e => handleModeChange(e.target.value)}
+              disabled={savingContributed}
+              className="text-xs border border-gray-200 rounded px-2 py-0.5 text-gray-600 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+            >
+              <option value="auto">From bank transfers</option>
+              <option value="manual">Manual entry</option>
+            </select>
+          </div>
+        )}
+
         <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-500 flex items-center gap-1">
-            Total contributed
-            {!isSuperhero && contributedIsAuto && investment.total_contributed > 0 && (
-              <span className="text-xs text-blue-400" title="Auto-calculated from bank transfers">auto</span>
-            )}
-          </span>
+          <span className="text-sm text-gray-500">Total contributed</span>
           {!isSuperhero && editingContributed ? (
             <div className="flex items-center gap-1.5">
               <span className="text-sm text-gray-400">$</span>
@@ -603,9 +633,12 @@ function InvestmentCard({ investment, onUpdated, onDeleted }) {
             </div>
           ) : (
             <div className="flex items-center gap-1.5">
-              <span className="text-sm font-medium text-gray-800">{fmt(investment.total_contributed)}</span>
-              {!isSuperhero && (
-                <button onClick={startEditContributed} className="p-1 text-gray-300 hover:text-blue-500 rounded" title="Override contributed amount">
+              <span className="text-sm font-medium text-gray-800">
+                {investment.total_contributed > 0 ? fmt(investment.total_contributed) : <span className="text-gray-400">—</span>}
+              </span>
+              {!isSuperhero && contributedMode === 'manual' && (
+                <button onClick={() => { setContributedVal(String(investment.contributed_override || '')); setEditingContributed(true); }}
+                  className="p-1 text-gray-300 hover:text-blue-500 rounded" title="Edit amount">
                   <Edit2 size={12} />
                 </button>
               )}
