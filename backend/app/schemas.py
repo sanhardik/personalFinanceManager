@@ -189,6 +189,7 @@ class InvestmentResponse(BaseModel):
     bank_name: str
     account_number: str
     total_contributed: float
+    contributed_override: float | None  # manual override; None = auto-derived
     current_value: float | None
     current_value_at: datetime | None
     return_amount: float | None    # current_value - total_contributed

@@ -85,6 +85,7 @@ async def lifespan(app: FastAPI):
                     ("current_value", "DECIMAL(12,2) NULL"),
                     ("current_value_at", "DATETIME NULL"),
                     ("bsb", "VARCHAR(10) NULL"),
+                    ("contributed", "DECIMAL(12,2) NULL"),
                 ]:
                     exists = await conn.execute(text(
                         "SELECT COUNT(*) FROM information_schema.COLUMNS "

@@ -6,6 +6,9 @@ export const fetchInvestments = () =>
 export const updateInvestmentValue = (id, currentValue) =>
   api.patch(`/investments/${id}/value`, { current_value: currentValue }).then(r => r.data);
 
+export const updateContributed = (id, contributed) =>
+  api.patch(`/investments/${id}/value`, { contributed }).then(r => r.data);
+
 export const fetchHoldings = (accountId) =>
   api.get(`/investments/${accountId}/holdings`).then(r => r.data);
 

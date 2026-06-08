@@ -8,7 +8,7 @@ import {
   LineChart, Line, PieChart, Pie, Cell, ResponsiveContainer,
 } from 'recharts';
 import {
-  fetchInvestments, updateInvestmentValue, fetchHoldings,
+  fetchInvestments, updateInvestmentValue, updateContributed, fetchHoldings,
   fetchTrades, fetchDividends, fetchPerformance, patchHoldingPrice,
   refreshPrices,
 } from '../api/investments';
@@ -485,11 +485,16 @@ function InvestmentCard({ investment, onUpdated, onDeleted }) {
   const [editing, setEditing] = useState(false);
   const [inputVal, setInputVal] = useState('');
   const [saving, setSaving] = useState(false);
+  const [editingContributed, setEditingContributed] = useState(false);
+  const [contributedVal, setContributedVal] = useState('');
+  const [savingContributed, setSavingContributed] = useState(false);
   const [error, setError] = useState(null);
   const [showHoldings, setShowHoldings] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const isSuperhero = investment.bank_name === 'Superhero';
+  // contributed is auto-derived unless manually overridden
+  const contributedIsAuto = investment.contributed_override == null;
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -527,6 +532,29 @@ function InvestmentCard({ investment, onUpdated, onDeleted }) {
 
   const cancel = () => { setEditing(false); setError(null); };
 
+  const startEditContributed = () => {
+    setContributedVal(investment.contributed_override != null ? String(investment.contributed_override) : String(investment.total_contributed || ''));
+    setEditingContributed(true);
+    setError(null);
+  };
+
+  const saveContributed = async () => {
+    const val = parseFloat(contributedVal);
+    if (isNaN(val) || val < 0) { setError('Enter a valid amount'); return; }
+    setSavingContributed(true);
+    try {
+      const updated = await updateContributed(investment.id, val);
+      onUpdated(updated);
+      setEditingContributed(false);
+    } catch {
+      setError('Failed to save');
+    } finally {
+      setSavingContributed(false);
+    }
+  };
+
+  const cancelContributed = () => { setEditingContributed(false); setError(null); };
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5">
       <div className="flex items-start justify-between mb-4">
@@ -553,8 +581,36 @@ function InvestmentCard({ investment, onUpdated, onDeleted }) {
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-500">Total contributed</span>
-          <span className="text-sm font-medium text-gray-800">{fmt(investment.total_contributed)}</span>
+          <span className="text-sm text-gray-500 flex items-center gap-1">
+            Total contributed
+            {!isSuperhero && contributedIsAuto && investment.total_contributed > 0 && (
+              <span className="text-xs text-blue-400" title="Auto-calculated from bank transfers">auto</span>
+            )}
+          </span>
+          {!isSuperhero && editingContributed ? (
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm text-gray-400">$</span>
+              <input type="number" value={contributedVal} onChange={e => setContributedVal(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') saveContributed(); if (e.key === 'Escape') cancelContributed(); }}
+                autoFocus
+                className="w-28 px-2 py-1 border border-blue-400 rounded text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <button onClick={saveContributed} disabled={savingContributed} className="p-1 text-green-600 hover:bg-green-50 rounded">
+                {savingContributed ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+              </button>
+              <button onClick={cancelContributed} className="p-1 text-gray-400 hover:bg-gray-100 rounded">
+                <X size={13} />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-medium text-gray-800">{fmt(investment.total_contributed)}</span>
+              {!isSuperhero && (
+                <button onClick={startEditContributed} className="p-1 text-gray-300 hover:text-blue-500 rounded" title="Override contributed amount">
+                  <Edit2 size={12} />
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {!isSuperhero && (

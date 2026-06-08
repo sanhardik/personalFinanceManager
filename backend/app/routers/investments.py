@@ -39,8 +39,11 @@ router = APIRouter(prefix="/investments", tags=["investments"])
 
 async def _build_investment_response(acc: Account, db: AsyncSession) -> dict:
     """
-    Total Contributed = cost basis of all Buy trades (money actually invested).
-    Total Return      = (current_value - cost_basis) + total_dividends.
+    Total Contributed — priority order:
+      1. SUM(ABS(net_amount)) for Buy stock trades (Superhero accounts)
+      2. SUM(ABS(tx_amount)) for bank Transfer Out transactions pointing to this account
+      3. Manual override stored in acc.contributed
+    Total Return = (current_value - total_contributed) + total_dividends.
     """
     agg = await db.execute(
         select(
@@ -53,8 +56,25 @@ async def _build_investment_response(acc: Account, db: AsyncSession) -> dict:
         ).where(StockTrade.account_id == acc.id)
     )
     row = agg.one()
-    total_contributed = float(row.cost_basis)
+    trade_cost_basis = float(row.cost_basis)
     total_dividends = float(row.total_dividends)
+
+    if trade_cost_basis > 0:
+        # Superhero-style: we have stock trade records
+        total_contributed = trade_cost_basis
+    else:
+        # No stock trades — try summing bank transfers into this investment account
+        transfer_agg = await db.execute(
+            select(
+                func.coalesce(func.sum(func.abs(Transaction.tx_amount)), 0).label("total")
+            ).where(Transaction.transfer_account_id == acc.id)
+        )
+        transfer_total = float(transfer_agg.scalar())
+        if transfer_total > 0:
+            total_contributed = transfer_total
+        else:
+            # Fall back to manually set value
+            total_contributed = float(acc.contributed) if acc.contributed is not None else 0.0
 
     current_value = acc.current_value
     if current_value is not None and total_contributed > 0:
@@ -70,6 +90,7 @@ async def _build_investment_response(acc: Account, db: AsyncSession) -> dict:
         "bank_name": acc.bank_name,
         "account_number": acc.account_number,
         "total_contributed": total_contributed,
+        "contributed_override": acc.contributed,
         "current_value": current_value,
         "current_value_at": acc.current_value_at,
         "return_amount": return_amount,
@@ -152,11 +173,22 @@ async def update_current_value(
         raise HTTPException(status_code=404, detail="Investment account not found")
 
     value = body.get("current_value")
-    if value is None or not isinstance(value, (int, float)):
-        raise HTTPException(status_code=422, detail="current_value must be a number")
+    contributed = body.get("contributed")
 
-    acc.current_value = float(value)
-    acc.current_value_at = datetime.utcnow()
+    if value is not None:
+        if not isinstance(value, (int, float)):
+            raise HTTPException(status_code=422, detail="current_value must be a number")
+        acc.current_value = float(value)
+        acc.current_value_at = datetime.utcnow()
+
+    if contributed is not None:
+        if not isinstance(contributed, (int, float)):
+            raise HTTPException(status_code=422, detail="contributed must be a number")
+        acc.contributed = float(contributed)
+
+    if value is None and contributed is None:
+        raise HTTPException(status_code=422, detail="Provide current_value or contributed")
+
     await db.commit()
     await db.refresh(acc)
     return await _build_investment_response(acc, db)

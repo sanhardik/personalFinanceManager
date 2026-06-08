@@ -104,9 +104,10 @@ class Account(Base):
     linked_account_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("accounts.id"), nullable=True
     )
-    # Investment accounts: manually-entered current portfolio value
+    # Investment accounts: manually-entered current portfolio value + contributed
     current_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     current_value_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    contributed: Mapped[float | None] = mapped_column(Float, nullable=True)  # manual override for accounts with no stock trades
 
     # Loan fields — only relevant when account_type = "home_loan"
     asset_id: Mapped[int | None] = mapped_column(
