@@ -591,12 +591,10 @@ function InvestmentCard({ investment, onUpdated, onDeleted }) {
         </div>
       )}
 
-        {!isSuperhero && (
-          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-            <span className="text-sm text-gray-500">Return</span>
-            <ReturnBadge amount={investment.return_amount} pct={investment.return_pct} />
-          </div>
-        )}
+        <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+          <span className="text-sm text-gray-500">Return</span>
+          <ReturnBadge amount={investment.return_amount} pct={investment.return_pct} />
+        </div>
       </div>
 
       {investment.current_value_at && !isSuperhero && (

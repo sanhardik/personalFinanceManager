@@ -38,19 +38,28 @@ router = APIRouter(prefix="/investments", tags=["investments"])
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 async def _build_investment_response(acc: Account, db: AsyncSession) -> dict:
-    """Calculate total contributed from Transfer Out transactions pointing to this account."""
-    result = await db.execute(
-        select(func.coalesce(func.sum(Transaction.tx_amount), 0)).where(
-            Transaction.transfer_account_id == acc.id,
-            Transaction.tx_type == "Expense",
-        )
+    """
+    Total Contributed = cost basis of all Buy trades (money actually invested).
+    Total Return      = (current_value - cost_basis) + total_dividends.
+    """
+    agg = await db.execute(
+        select(
+            func.coalesce(
+                func.sum(case((StockTrade.trade_type == "Buy", func.abs(StockTrade.net_amount)), else_=0)), 0
+            ).label("cost_basis"),
+            func.coalesce(
+                func.sum(case((StockTrade.trade_type == "Dividend Received", StockTrade.net_amount), else_=0)), 0
+            ).label("total_dividends"),
+        ).where(StockTrade.account_id == acc.id)
     )
-    total_contributed = float(result.scalar())
+    row = agg.one()
+    total_contributed = float(row.cost_basis)
+    total_dividends = float(row.total_dividends)
 
     current_value = acc.current_value
-    if current_value is not None:
-        return_amount = current_value - total_contributed
-        return_pct = (return_amount / total_contributed * 100) if total_contributed > 0 else None
+    if current_value is not None and total_contributed > 0:
+        return_amount = (current_value - total_contributed) + total_dividends
+        return_pct = (return_amount / total_contributed * 100)
     else:
         return_amount = None
         return_pct = None

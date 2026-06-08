@@ -33,8 +33,10 @@ Hardik Sanghavi (hardik.sanghavi@permaconn.com). Building a personal finance man
 - Async SQLAlchemy with aiomysql for FastAPI
 - Rule-based categorisation in-app; Cowork for batch AI categorisation externally
 - FastAPI serves data to React (no AI in API layer)
-- CORS: backend 8000, frontend 5173
+- **API routing**: All FastAPI routers mounted under `prefix="/api"` in `main.py`. Vite proxy forwards `/api/*` to backend WITHOUT stripping prefix (no rewrite). Both dev and prod use `/api/*` paths.
+- CORS: backend 8000, frontend 5173. `http://localhost:5173` hardcoded in `allow_origins` in addition to `settings.FRONTEND_URL` so tests always pass.
 - Dedup via SHA256 hash of (account_id + tx_date + tx_desc + tx_amount)
+- **Test client**: `_ApiClient` wrapper in `conftest.py` prepends `/api` to all requests so tests hit FastAPI via ASGI transport without needing a proxy.
 
 ## Testing
 - **Test DB**: Separate MariaDB container on port 3307 (`docker-compose.test.yml`)
@@ -69,6 +71,7 @@ Hardik Sanghavi (hardik.sanghavi@permaconn.com). Building a personal finance man
 | 8 | Macquarie parser | Done |
 | 9 | Home Loan Tracking — Assets, Loans pages, loan CSV detection, upload flow | Done |
 | 10 | Superhero CSV ingestion — stock trades, holdings, P&L analytics, ARR | Done |
+| 11 | Open source release — production routing fix, CI, GitHub Pages landing page | Done |
 
 ## Chunk 1 — What Was Built (DONE)
 ### Backend (Python FastAPI)
@@ -414,11 +417,58 @@ Superhero's Cash Statement CSV tracks AUD cash account activity (deposits, FX tr
 
 ### Tests (233 passed, 5 skipped — all green)
 
+## Chunk 12 — Live Stock Price Refresh (DONE)
+
+### What Was Built
+- **Price fetcher**: `app/services/price_fetcher.py` — uses `yfinance` + `curl_cffi` Chrome impersonation to fetch prices from Yahoo Finance without being rate-limited on Raspberry Pi. Tries `{CODE}.AX` (ASX) first, falls back to plain `{CODE}` (US). Sequential requests with 2s delay between each.
+- **Endpoint**: `POST /api/investments/{account_id}/refresh-prices` — fetches all security prices for an account, saves each as a `StockValuation` row, auto-updates `acc.current_value` from sum of holding values, returns `{ updated, failed, results, holdings, account }`.
+- **Frontend**: "Refresh Prices" button in holdings table header; auto-triggers on page load; shows spinner + success/fail message; propagates updated account to card via `onAccountUpdated` callback.
+- **Metrics fix**: `total_contributed` and `total_return` now derived from stock trades (not bank transfer transactions):
+  - `total_contributed` = `SUM(ABS(net_amount))` for Buy trades = cost basis
+  - `return_amount` = `(current_value − cost_basis) + total_dividends`
+  - `return_pct` = `return_amount / cost_basis × 100`
+  - Return badge now shown on Superhero account card (was hidden before)
+- **RPi deployment**: Backend logs to `~/FinancePortfolioManager/logs/backend.log` via systemd `StandardOutput=append`. Service: `sudo systemctl restart financeapp-backend`.
+
+### Key Files
+- `backend/app/services/price_fetcher.py` — yfinance + curl_cffi price fetcher
+- `backend/app/routers/investments.py` — refresh-prices endpoint + fixed `_build_investment_response`
+- `backend/app/schemas.py` — `PriceRefreshResult`, `PriceRefreshResponse` (includes `account` field)
+- `frontend/src/pages/Investments.jsx` — Refresh Prices button, auto-fetch on load, account sync
+- `frontend/src/api/investments.js` — `refreshPrices(accountId)`
+
+### Dependencies Added
+- `yfinance==0.2.54` — Yahoo Finance data (already present)
+- `curl_cffi==0.7.4` — Chrome TLS impersonation to bypass RPi rate limiting
+
+### Tests (262 passed, 5 skipped — all green)
+- `tests/test_price_refresh.py` — 9 tests: price fetcher unit tests (.AX suffix, fallback, None), endpoint tests (updates holdings, partial failure, 404, result shape)
+
 ## Deep Memory
 Full glossary, project details, and old DB schema are in the `memory/` directory:
 - `memory/glossary.md` — All acronyms, internal terms, tech stack
 - `memory/projects/personal-finance-manager.md` — Full project context
 - `memory/context/existing-database-schema.md` — Old v1 database schema for reference
+
+## Chunk 11 — Open Source Release (DONE)
+### What Was Done
+- **Production routing fix**: Added `prefix="/api"` to all `include_router` calls in `main.py`. Removed Vite proxy `rewrite` so `/api` prefix is preserved end-to-end. Fixes 404s in production (no Vite proxy) where `/accounts` routes didn't exist at the backend level.
+- **Test infrastructure**: Added `_ApiClient` wrapper class to `tests/conftest.py` — prepends `/api` to every test request so all 233 tests work via ASGI transport (no proxy). Fixed missing `options()` method needed by CORS test.
+- **Fixture anonymisation fixes**: Updated integration test assertions in `test_macquarie_loan_parser.py`, `test_loans.py`, `test_nab_parser.py`, `test_superhero_cash_parser.py` to match anonymised fixture data (different account numbers, balances, amounts).
+- **CORS fix**: `backend/.env` had `FRONTEND_URL=http://localhost:8000` (wrong — the backend port). Corrected to `http://localhost:5173`. Also hardcoded `http://localhost:5173` in `main.py` CORS origins so tests always pass regardless of `.env`.
+- **GitHub Pages landing page**: Created `docs/index.html` — full FinHQ landing page with hero, stats, features grid, screenshot showcase, how-it-works section, privacy block. Deployed at repo GitHub Pages URL. Domain `finhq.app` earmarked for future purchase.
+- **Screenshots**: 10 app screenshots renamed (removed Unicode ` ` narrow no-break space in macOS filenames) and saved to `docs/screenshots/`.
+- **Git author**: Last 3 commits re-attributed to `sanhardik <sanhardik@gmail.com>` using `git cherry-pick --no-commit` + `GIT_AUTHOR_*` env vars.
+- **CI / branch protection**: GitHub Actions CI runs all tests on push; branch protection requires CI to pass before merging to main.
+- **Test count**: 233 passed, 5 skipped — all green.
+
+### Key Files Changed
+- `backend/app/main.py` — `/api` prefix on all routers + CORS origins fix
+- `frontend/vite.config.js` — removed proxy rewrite
+- `backend/tests/conftest.py` — `_ApiClient` wrapper + `options()` method
+- `backend/tests/test_*.py` — fixture assertion updates (4 files)
+- `docs/index.html` — GitHub Pages landing page
+- `docs/screenshots/*.png` — 10 app screenshots
 
 ## Preferences
 - Ask clarifying questions before giving answers
