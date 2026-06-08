@@ -12,6 +12,7 @@ import {
   fetchDashboardMonthly,
   fetchDashboardByCategory,
 } from '../api/dashboard';
+import { fetchInvestments } from '../api/investments';
 import { useTransactionStats } from '../contexts/TransactionStatsContext';
 import { useCategoriseDrawer } from '../contexts/CategoriseDrawerContext';
 import DateRangePicker from '../components/DateRangePicker';
@@ -133,6 +134,7 @@ export default function Dashboard() {
   const [monthly, setMonthly] = useState([]);
   const [spendingCats, setSpendingCats] = useState([]);
   const [incomeCats, setIncomeCats] = useState([]);
+  const [investments, setInvestments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -141,16 +143,18 @@ export default function Dashboard() {
     setLoading(true);
     setError(null);
     try {
-      const [s, m, sc, ic] = await Promise.all([
+      const [s, m, sc, ic, inv] = await Promise.all([
         fetchDashboardSummary(dateFrom, dateTo),
         fetchDashboardMonthly(dateFrom, dateTo),
         fetchDashboardByCategory('Expense', dateFrom, dateTo),
         fetchDashboardByCategory('Income', dateFrom, dateTo),
+        fetchInvestments(),
       ]);
       setSummary(s);
       setMonthly(m);
       setSpendingCats(sc);
       setIncomeCats(ic);
+      setInvestments(inv);
     } catch (err) {
       console.error('Dashboard load failed:', err);
       setError('Failed to load dashboard data. Is the backend running?');
@@ -333,7 +337,7 @@ export default function Dashboard() {
           </div>
 
           {/* Category breakdowns */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <CategoryChart
               title="Spending by Category"
               data={spendingCats}
@@ -347,6 +351,94 @@ export default function Dashboard() {
               onBarClick={(payload) => handleCategoryBarClick(payload, 'Income')}
             />
           </div>
+
+          {/* Investments summary */}
+          {investments.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-gray-700">Investments</h3>
+                <button
+                  onClick={() => navigate('/investments')}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  View all
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-gray-500 border-b border-gray-100">
+                      <th className="text-left pb-2 font-medium">Account</th>
+                      <th className="text-right pb-2 font-medium">Contributed</th>
+                      <th className="text-right pb-2 font-medium">Current Value</th>
+                      <th className="text-right pb-2 font-medium">Total Gain</th>
+                      <th className="text-right pb-2 font-medium">Return</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {investments.map((acc) => {
+                      const hasReturn = acc.return_amount != null && acc.return_pct != null;
+                      const gainColour = hasReturn
+                        ? (acc.return_amount >= 0 ? 'text-green-600' : 'text-red-500')
+                        : 'text-gray-400';
+                      return (
+                        <tr key={acc.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="py-2.5 pr-4">
+                            <p className="font-medium text-gray-800">{acc.account_name}</p>
+                            <p className="text-xs text-gray-400">{acc.bank_name}</p>
+                          </td>
+                          <td className="py-2.5 text-right text-gray-700 tabular-nums">
+                            {new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(acc.total_contributed)}
+                          </td>
+                          <td className="py-2.5 text-right text-gray-700 tabular-nums">
+                            {acc.current_value != null
+                              ? new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(acc.current_value)
+                              : <span className="text-gray-400">—</span>}
+                          </td>
+                          <td className={`py-2.5 text-right tabular-nums ${gainColour}`}>
+                            {hasReturn
+                              ? new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(acc.return_amount)
+                              : <span className="text-gray-400">—</span>}
+                          </td>
+                          <td className={`py-2.5 text-right tabular-nums font-medium ${gainColour}`}>
+                            {hasReturn
+                              ? `${acc.return_pct >= 0 ? '+' : ''}${acc.return_pct.toFixed(2)}%`
+                              : <span className="text-gray-400">—</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  {investments.length > 1 && (() => {
+                    const totalContrib = investments.reduce((s, a) => s + a.total_contributed, 0);
+                    const allHaveValue = investments.every(a => a.current_value != null);
+                    const totalValue = allHaveValue ? investments.reduce((s, a) => s + a.current_value, 0) : null;
+                    const allHaveReturn = investments.every(a => a.return_amount != null);
+                    const totalGain = allHaveReturn ? investments.reduce((s, a) => s + a.return_amount, 0) : null;
+                    const totalPct = (allHaveReturn && totalContrib > 0) ? (totalGain / totalContrib) * 100 : null;
+                    const fmt = (v) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(v);
+                    return (
+                      <tfoot className="border-t border-gray-200">
+                        <tr className="text-xs">
+                          <td className="pt-2.5 font-medium text-gray-700">Total</td>
+                          <td className="pt-2.5 text-right tabular-nums font-medium text-gray-700">{fmt(totalContrib)}</td>
+                          <td className="pt-2.5 text-right tabular-nums font-medium text-gray-700">
+                            {totalValue != null ? fmt(totalValue) : <span className="text-gray-400">—</span>}
+                          </td>
+                          <td className={`pt-2.5 text-right tabular-nums font-medium ${totalGain != null ? (totalGain >= 0 ? 'text-green-600' : 'text-red-500') : 'text-gray-400'}`}>
+                            {totalGain != null ? fmt(totalGain) : '—'}
+                          </td>
+                          <td className={`pt-2.5 text-right tabular-nums font-medium ${totalPct != null ? (totalPct >= 0 ? 'text-green-600' : 'text-red-500') : 'text-gray-400'}`}>
+                            {totalPct != null ? `${totalPct >= 0 ? '+' : ''}${totalPct.toFixed(2)}%` : '—'}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    );
+                  })()}
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
