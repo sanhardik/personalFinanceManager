@@ -27,9 +27,12 @@ class Settings(BaseSettings):
     # CORS
     FRONTEND_URL: str = "http://localhost:5173"
 
-    # Alpaca market data (optional — for auto price refresh)
+    # Alpaca market data — US stocks
     ALPACA_API_KEY: str = ""
     ALPACA_API_SECRET: str = ""
+
+    # Twelve Data — ASX stocks (fallback for anything Alpaca doesn't cover)
+    TWELVE_DATA_API_KEY: str = ""
 
     @property
     def is_sqlite(self) -> bool:
