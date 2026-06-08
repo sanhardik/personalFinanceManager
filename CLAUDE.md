@@ -444,6 +444,53 @@ Superhero's Cash Statement CSV tracks AUD cash account activity (deposits, FX tr
 ### Tests (262 passed, 5 skipped — all green)
 - `tests/test_price_refresh.py` — 9 tests: price fetcher unit tests (.AX suffix, fallback, None), endpoint tests (updates holdings, partial failure, 404, result shape)
 
+## Chunk 13 — Dashboard Enhancements + Multi-Currency + Investment Contributions (DONE)
+
+### Dashboard — Clickable Charts
+- Monthly ComposedChart: clicking an Income or Expense bar navigates to `/transactions?tx_type=Income|Expense&date_from=...&date_to=...`
+- Category BarCharts: clicking a bar navigates to `/transactions?tx_type=...&category_name=...&date_from=...&date_to=...` (date range carried from dashboard filter)
+- `Transactions.jsx` now reads `tx_type`, `date_from`, `date_to`, `category_name` from URL query params on mount and pre-applies them as initial filter state. `category_name` is resolved to a `category_id` client-side after categories load (backend doesn't accept category_name directly)
+- Bars styled with `cursor: pointer`
+
+### Dashboard — Investments Summary Section
+- New section below category charts: table of all investment accounts with Contributed, Current Value, Total Gain (green/red), Return % (green/red)
+- Totals footer row when 2+ accounts exist; "—" shown gracefully when prices haven't been refreshed
+- "View all →" link to `/investments`
+- Fetched via `fetchInvestments()` inside the existing `Promise.all` (no extra latency)
+
+### Multi-Currency Support for US Stocks
+- **price_fetcher**: `_fetch_price_sync` now returns `(price, currency)` tuple. `.AX` ticker success → `"AUD"`, plain US ticker fallback → `"USD"`
+- **`fetch_aud_usd_rate()`**: fetches live rate via yfinance `AUDUSD=X` ticker; falls back to `0.65` if unavailable
+- **DB migrations**: `currency VARCHAR(3) DEFAULT 'AUD'` added to `stock_trades` and `stock_valuations` tables (startup migration)
+- **Holdings calculation**: USD prices divided by `aud_usd_rate` before computing `current_value`; all P&L in AUD
+- **`refresh-prices` response**: includes `aud_usd_rate` field
+- **Frontend**: `USD→AUD` badge shown next to current price for USD-currency holdings; live FX rate displayed under Refresh Prices button
+- **Schemas**: `HoldingRow`, `PriceRefreshResult`, `StockTradeResponse` all include `currency` field; `PriceRefreshResponse` includes `aud_usd_rate`
+
+### Investment Account Contribution Source
+- `contributed DECIMAL(12,2) NULL` column added to `accounts` table (startup migration)
+- `_build_investment_response` derives `total_contributed` in priority order:
+  1. SUM of Buy stock trade `net_amount` (Superhero accounts)
+  2. SUM of `ABS(tx_amount)` for bank transactions with `transfer_account_id = this account` (e.g. Spaceship monthly transfers)
+  3. Manual override stored in `acc.contributed`
+- Non-Superhero investment cards show a **"Contribution source"** dropdown: `"From bank transfers"` (auto) or `"Manual entry"`
+- Manual entry mode shows an editable $ field + pencil icon; switching back to auto clears the override (`clear_contributed: true` in PATCH body)
+- `PATCH /investments/{id}/value` accepts `current_value`, `contributed`, and `clear_contributed` fields
+- `InvestmentResponse` schema includes `contributed_override: float | None`
+
+### Key Files Changed
+- `frontend/src/pages/Dashboard.jsx` — clickable charts + investments summary
+- `frontend/src/pages/Transactions.jsx` — URL param pre-filtering on mount
+- `frontend/src/pages/Investments.jsx` — USD→AUD badge, FX rate display, contribution source selector
+- `frontend/src/api/investments.js` — `updateContributed`, `clearContributed`
+- `backend/app/services/price_fetcher.py` — `(price, currency)` tuple + `fetch_aud_usd_rate()`
+- `backend/app/routers/investments.py` — multi-currency holdings, contributed source priority, PATCH update
+- `backend/app/models.py` — `contributed` field on Account
+- `backend/app/schemas.py` — `contributed_override` on `InvestmentResponse`
+- `backend/app/main.py` — startup migrations for `currency` + `contributed` columns
+
+### Tests (262 passed, 5 skipped — all green)
+
 ## Deep Memory
 Full glossary, project details, and old DB schema are in the `memory/` directory:
 - `memory/glossary.md` — All acronyms, internal terms, tech stack
