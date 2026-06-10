@@ -10,6 +10,7 @@ import {
   TrendingUp,
   Home,
   Building2,
+  HandCoins,
 } from 'lucide-react';
 import { useTransactionStats } from '../../contexts/TransactionStatsContext';
 import { useCategoriseDrawer } from '../../contexts/CategoriseDrawerContext';
@@ -19,6 +20,7 @@ const navItems = [
   { to: '/accounts', label: 'Accounts', icon: Landmark },
   { to: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
   { to: '/investments', label: 'Investments', icon: TrendingUp },
+  { to: '/lending', label: 'Lending', icon: HandCoins },
   { to: '/loans', label: 'Loans', icon: Home },
   { to: '/assets', label: 'Assets', icon: Building2 },
   { to: '/categories', label: 'Categories', icon: Tags },

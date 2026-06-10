@@ -285,6 +285,18 @@ async def patch_transaction(
                 raise HTTPException(status_code=404, detail="Transfer account not found")
         tx.transfer_account_id = body.transfer_account_id
 
+    if body.lending_loan_id is not None:
+        if body.lending_loan_id == -1:
+            tx.lending_loan_id = None
+            tx.lending_tx_type = None
+        else:
+            if not body.lending_tx_type:
+                raise HTTPException(status_code=422, detail="lending_tx_type required when linking a loan")
+            tx.lending_loan_id = body.lending_loan_id
+            tx.lending_tx_type = body.lending_tx_type
+    elif body.lending_tx_type is not None and tx.lending_loan_id:
+        tx.lending_tx_type = body.lending_tx_type
+
     await db.commit()
 
     # Expire cached relationships so reload fetches updated values
