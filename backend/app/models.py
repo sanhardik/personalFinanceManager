@@ -219,6 +219,11 @@ class Transaction(Base):
     transfer_account_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True
     )  # For Transfer In/Out: the other account involved
+    lending_loan_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("lending_loans.id", ondelete="SET NULL"), nullable=True
+    )
+    lending_tx_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # "disbursement" | "repayment"
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
@@ -230,6 +235,9 @@ class Transaction(Base):
     category: Mapped["Category | None"] = relationship(back_populates="transactions")
     transfer_account: Mapped["Account | None"] = relationship(
         "Account", foreign_keys="Transaction.transfer_account_id"
+    )
+    lending_loan: Mapped["LendingLoan | None"] = relationship(
+        "LendingLoan", foreign_keys="Transaction.lending_loan_id", back_populates="transactions"
     )
 
     @staticmethod
@@ -385,3 +393,39 @@ class SuggestedRule(Base):
 
     def __repr__(self) -> str:
         return f"<SuggestedRule '{self.pattern}' → category_id={self.category_id} hits={self.hit_count}>"
+
+
+class LendingLoan(Base):
+    """A loan the user has given out — they are the lender."""
+
+    __tablename__ = "lending_loans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    loan_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    loan_type: Mapped[str] = mapped_column(String(30), nullable=False, default="personal")
+    # "personal" | "business" | "property_share"
+    borrower_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    principal: Mapped[float] = mapped_column(Float(precision=2), nullable=False)
+    interest_rate: Mapped[float] = mapped_column(Float, nullable=False)  # % p.a.
+    start_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    term_months: Mapped[int | None] = mapped_column(Integer, nullable=True)  # NULL = open-ended
+    repayment_type: Mapped[str] = mapped_column(String(30), nullable=False, default="principal_and_interest")
+    # "principal_and_interest" | "interest_only"
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    # "active" | "paid_off" | "defaulted"
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Property-share fields
+    asset_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("assets.id", ondelete="SET NULL"), nullable=True)
+    ownership_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+
+    asset: Mapped["Asset | None"] = relationship("Asset", foreign_keys=[asset_id])
+    transactions: Mapped[list["Transaction"]] = relationship(
+        "Transaction",
+        foreign_keys="Transaction.lending_loan_id",
+        back_populates="lending_loan",
+    )
+
+    def __repr__(self) -> str:
+        return f"<LendingLoan {self.loan_name} ({self.status})>"

@@ -213,6 +213,8 @@ class TransactionResponse(BaseModel):
     is_categorised: bool
     transfer_account_id: int | None = None
     transfer_account_name: str | None = None
+    lending_loan_id: int | None = None
+    lending_tx_type: str | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -240,6 +242,8 @@ class TransactionUpdate(BaseModel):
     """PATCH /transactions/{id} — update category and optional transfer account."""
     category_id: int | None = None
     transfer_account_id: int | None = None
+    lending_loan_id: int | None = None   # use sentinel -1 to explicitly unlink
+    lending_tx_type: str | None = None
 
 
 class BulkCategoriseRequest(BaseModel):
@@ -473,3 +477,82 @@ class NetWorthJourneyResponse(BaseModel):
     """Response for GET /networth/journey."""
     timeline: list[NetWorthPoint]
     milestones: list[NetWorthMilestone]
+
+
+# ── Lending Loans ────────────────────────────────────────────
+
+class LendingLoanCreate(BaseModel):
+    loan_name: str = Field(..., min_length=1, max_length=200)
+    loan_type: str = Field(default="personal", pattern="^(personal|business|property_share)$")
+    borrower_name: str | None = Field(default=None, max_length=200)
+    principal: float = Field(..., gt=0)
+    interest_rate: float = Field(..., gt=0)
+    start_date: datetime
+    term_months: int | None = Field(default=None, gt=0)
+    repayment_type: str = Field(default="principal_and_interest",
+        pattern="^(principal_and_interest|interest_only)$")
+    status: str = Field(default="active", pattern="^(active|paid_off|defaulted)$")
+    notes: str | None = None
+    asset_id: int | None = None
+    ownership_pct: float | None = Field(default=None, gt=0, le=100)
+
+
+class LendingLoanUpdate(BaseModel):
+    loan_name: str | None = Field(default=None, min_length=1, max_length=200)
+    loan_type: str | None = Field(default=None, pattern="^(personal|business|property_share)$")
+    borrower_name: str | None = None
+    principal: float | None = Field(default=None, gt=0)
+    interest_rate: float | None = Field(default=None, gt=0)
+    start_date: datetime | None = None
+    term_months: int | None = None
+    repayment_type: str | None = Field(default=None,
+        pattern="^(principal_and_interest|interest_only)$")
+    status: str | None = Field(default=None, pattern="^(active|paid_off|defaulted)$")
+    notes: str | None = None
+    asset_id: int | None = None
+    ownership_pct: float | None = Field(default=None, gt=0, le=100)
+
+
+class LendingLoanResponse(BaseModel):
+    id: int
+    loan_name: str
+    loan_type: str
+    borrower_name: str | None
+    principal: float
+    interest_rate: float
+    start_date: datetime
+    term_months: int | None
+    repayment_type: str
+    status: str
+    notes: str | None
+    asset_id: int | None
+    ownership_pct: float | None
+    created_at: datetime
+    monthly_payment: float | None
+    total_interest: float | None
+    total_repaid: float
+    disbursed_amount: float
+    asset: "AssetResponse | None"
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AmortisationRow(BaseModel):
+    period: int
+    payment_date: str
+    opening_balance: float
+    payment_amount: float
+    interest: float
+    principal: float
+    closing_balance: float
+    actual_payment: float | None = None
+    actual_tx_id: int | None = None
+
+
+class LendingPortfolioSummary(BaseModel):
+    total_capital_deployed: float
+    total_monthly_income: float
+    weighted_avg_rate: float | None
+    count_active: int
+    count_paid_off: int
+    count_defaulted: int

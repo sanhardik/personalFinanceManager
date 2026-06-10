@@ -137,6 +137,7 @@ async def truncate_data(test_session_factory, setup_test_database):
         await session.execute(text("DELETE FROM suggested_rules"))
         await session.execute(text("DELETE FROM stock_valuations"))
         await session.execute(text("DELETE FROM stock_trades"))
+        await session.execute(text("DELETE FROM lending_loans"))
         await session.execute(text("DELETE FROM transactions"))
         await session.execute(text("DELETE FROM accounts"))
         await session.execute(text("DELETE FROM rules"))

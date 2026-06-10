@@ -39,6 +39,7 @@ from app.routers.assets import router as assets_router
 from app.routers.categories import router as categories_router
 from app.routers.dashboard import router as dashboard_router
 from app.routers.investments import router as investments_router
+from app.routers.lending import router as lending_router
 from app.routers.loans import router as loans_router
 from app.routers.rules import router as rules_router
 from app.routers.transactions import router as transactions_router
@@ -187,6 +188,26 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Migration: promoted_rule_id FK fix failed (non-fatal): %s", e)
 
+        # Schema migrations — lending_loans FK columns on transactions
+        try:
+            async with engine.begin() as conn:
+                for col_name, col_def in [
+                    ("lending_loan_id", "INT NULL"),
+                    ("lending_tx_type", "VARCHAR(20) NULL"),
+                ]:
+                    exists = await conn.execute(text(
+                        "SELECT COUNT(*) FROM information_schema.COLUMNS "
+                        "WHERE TABLE_SCHEMA = DATABASE() "
+                        "AND TABLE_NAME = 'transactions' AND COLUMN_NAME = :col"
+                    ), {"col": col_name})
+                    if exists.scalar() == 0:
+                        await conn.execute(text(
+                            f"ALTER TABLE transactions ADD COLUMN {col_name} {col_def}"
+                        ))
+                        logger.info("Migration: added %s to transactions", col_name)
+        except Exception as e:
+            logger.warning("Migration: lending columns failed (non-fatal): %s", e)
+
     # Seed default categories + rules (idempotent — skips existing)
     try:
         async with async_session_factory() as session:
@@ -230,6 +251,7 @@ app.include_router(assets_router,       prefix="/api")
 app.include_router(categories_router,   prefix="/api")
 app.include_router(dashboard_router,    prefix="/api")
 app.include_router(investments_router,  prefix="/api")
+app.include_router(lending_router,      prefix="/api")
 app.include_router(loans_router,        prefix="/api")
 app.include_router(rules_router,        prefix="/api")
 app.include_router(transactions_router, prefix="/api")
