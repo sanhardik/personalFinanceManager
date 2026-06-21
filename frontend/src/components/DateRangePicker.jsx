@@ -1,11 +1,6 @@
-/**
- * DateRangePicker — shared date range selector with preset shortcuts.
- *
- * Props:
- *   dateFrom  : string  YYYY-MM-DD
- *   dateTo    : string  YYYY-MM-DD
- *   onChange  : (from: string, to: string) => void
- */
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 
 const today = () => new Date().toISOString().split('T')[0];
 
@@ -19,11 +14,10 @@ function startOf(d) {
   return c;
 }
 
-/** Australian financial year runs 1 Jul – 30 Jun */
 function getFY(year) {
   return {
-    from: toISO(new Date(year, 6, 1)),      // 1 Jul
-    to:   toISO(new Date(year + 1, 5, 30)), // 30 Jun next year
+    from: toISO(new Date(year, 6, 1)),
+    to:   toISO(new Date(year + 1, 5, 30)),
   };
 }
 
@@ -76,14 +70,8 @@ const PRESETS = [
       return { from: toISO(from), to: today() };
     },
   },
-  {
-    label: 'This FY',
-    range: thisFY,
-  },
-  {
-    label: 'Last FY',
-    range: lastFY,
-  },
+  { label: 'This FY', range: thisFY },
+  { label: 'Last FY', range: lastFY },
 ];
 
 export default function DateRangePicker({ dateFrom, dateTo, onChange }) {
@@ -99,37 +87,38 @@ export default function DateRangePicker({ dateFrom, dateTo, onChange }) {
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      {/* Preset buttons */}
       <div className="flex items-center gap-1">
         {PRESETS.map(p => (
-          <button
+          <Button
             key={p.label}
+            variant={isActive(p) ? 'default' : 'outline'}
+            size="sm"
             onClick={() => applyPreset(p)}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            className={cn(
+              'h-7 px-2.5 text-xs',
               isActive(p)
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
+                ? 'bg-slate-800 text-white hover:bg-slate-700'
+                : 'text-slate-600 border-slate-200 hover:bg-slate-50',
+            )}
           >
             {p.label}
-          </button>
+          </Button>
         ))}
       </div>
 
-      {/* Manual date inputs */}
       <div className="flex items-center gap-1.5 text-sm">
-        <input
+        <Input
           type="date"
           value={dateFrom}
           onChange={e => onChange(e.target.value, dateTo)}
-          className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="h-7 px-2 py-1 text-sm w-36"
         />
-        <span className="text-gray-400 text-xs">→</span>
-        <input
+        <span className="text-slate-400 text-xs">→</span>
+        <Input
           type="date"
           value={dateTo}
           onChange={e => onChange(dateFrom, e.target.value)}
-          className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="h-7 px-2 py-1 text-sm w-36"
         />
       </div>
     </div>

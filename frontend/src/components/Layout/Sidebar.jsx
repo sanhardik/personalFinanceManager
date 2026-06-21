@@ -12,6 +12,9 @@ import {
   Building2,
   HandCoins,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import { useTransactionStats } from '../../contexts/TransactionStatsContext';
 import { useCategoriseDrawer } from '../../contexts/CategoriseDrawerContext';
 
@@ -34,12 +37,12 @@ export default function Sidebar({ onNavigate }) {
   const { open } = useCategoriseDrawer();
 
   return (
-    <aside className="w-60 bg-white border-r border-gray-200 min-h-screen flex flex-col">
-      <div className="p-5 border-b border-gray-200">
-        <h1 className="text-lg font-semibold text-gray-800 tracking-tight">
+    <aside className="w-60 bg-white border-r border-slate-200 min-h-screen flex flex-col">
+      <div className="p-5 border-b border-slate-200">
+        <h1 className="text-lg font-semibold text-slate-800 tracking-tight">
           Finance Manager
         </h1>
-        <p className="text-xs text-gray-400 mt-0.5">Personal Finance Tracker</p>
+        <p className="text-xs text-slate-400 mt-0.5">Personal Finance Tracker</p>
       </div>
 
       <nav className="flex-1 p-3">
@@ -50,23 +53,34 @@ export default function Sidebar({ onNavigate }) {
                 to={to}
                 end={to === '/'}
                 onClick={onNavigate}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                    isActive
-                      ? 'bg-blue-50 text-blue-700 font-medium'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                  }`
-                }
               >
-                <Icon size={18} />
-                {label}
-                {to === '/transactions' && stats?.uncategorised > 0 && (
-                  <button
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); open(); }}
-                    className="ml-auto text-xs bg-orange-100 text-orange-700 font-medium px-1.5 py-0.5 rounded-full hover:bg-orange-200 transition-colors"
+                {({ isActive }) => (
+                  <Button
+                    variant="ghost"
+                    className={cn(
+                      'w-full justify-start gap-3 h-9 px-3 text-sm font-normal',
+                      isActive
+                        ? 'bg-slate-100 text-slate-900 font-medium'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900',
+                    )}
+                    asChild={false}
                   >
-                    {stats.uncategorised}
-                  </button>
+                    <Icon size={16} />
+                    {label}
+                    {to === '/transactions' && stats?.uncategorised > 0 && (
+                      <button
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); open(); }}
+                        className="ml-auto"
+                      >
+                        <Badge
+                          variant="secondary"
+                          className="bg-amber-100 text-amber-800 hover:bg-amber-200 text-xs px-1.5 py-0 cursor-pointer"
+                        >
+                          {stats.uncategorised}
+                        </Badge>
+                      </button>
+                    )}
+                  </Button>
                 )}
               </NavLink>
             </li>

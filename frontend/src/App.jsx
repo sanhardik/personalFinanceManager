@@ -9,6 +9,7 @@
  */
 
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import Layout from './components/Layout/Layout';
 import { TransactionStatsProvider } from './contexts/TransactionStatsContext';
 import { CategoriseDrawerProvider } from './contexts/CategoriseDrawerContext';
@@ -27,6 +28,7 @@ import SettingsPage from './pages/SettingsPage';
 
 function App() {
   return (
+    <TooltipProvider>
     <TransactionStatsProvider>
     <CategoriseDrawerProvider>
     <BrowserRouter>
@@ -50,6 +52,7 @@ function App() {
     </BrowserRouter>
     </CategoriseDrawerProvider>
     </TransactionStatsProvider>
+    </TooltipProvider>
   );
 }
 

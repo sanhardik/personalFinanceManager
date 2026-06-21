@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Outlet } from 'react-router-dom';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 import Sidebar from './Sidebar';
 import Header from './Header';
 
@@ -8,22 +9,17 @@ export default function Layout() {
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-20 bg-black/40 md:hidden"
-          onClick={closeSidebar}
-        />
-      )}
+    <div className="flex min-h-screen bg-slate-50">
+      {/* Mobile sidebar via Sheet */}
+      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+        <SheetContent side="left" className="p-0 w-60">
+          <Sidebar onNavigate={closeSidebar} />
+        </SheetContent>
+      </Sheet>
 
-      {/* Sidebar — hidden on mobile unless open */}
-      <div className={`
-        fixed inset-y-0 left-0 z-30 md:static md:z-auto
-        transition-transform duration-200 ease-in-out
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-      `}>
-        <Sidebar onNavigate={closeSidebar} />
+      {/* Desktop sidebar — static */}
+      <div className="hidden md:flex">
+        <Sidebar />
       </div>
 
       {/* Main content area */}
