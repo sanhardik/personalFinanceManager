@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { X, Loader2, Sparkles } from 'lucide-react';
+import { Loader2, Sparkles } from 'lucide-react';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useCategoriseDrawer } from '../../contexts/CategoriseDrawerContext';
 import { useTransactionStats } from '../../contexts/TransactionStatsContext';
@@ -92,9 +91,6 @@ export function CategoriseDrawer() {
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">{nudgeCopy(stats?.uncategorised ?? 0)}</p>
           </div>
-          <Button variant="ghost" size="icon" onClick={close} className="text-slate-400 hover:text-slate-600 h-7 w-7">
-            <X size={16} />
-          </Button>
         </div>
 
         {/* Progress bar */}
