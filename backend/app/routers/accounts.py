@@ -71,6 +71,9 @@ async def create_account(
         loan_term_years=payload.loan_term_years,
         loan_repayment_type=payload.loan_repayment_type,
         offset_account_id=payload.offset_account_id,
+        lender_name=payload.lender_name,
+        loan_notes=payload.loan_notes,
+        payment_frequency=payload.payment_frequency,
     )
     db.add(account)
     await db.commit()

@@ -262,7 +262,7 @@ async def test_create_personal_loan_account(client: AsyncClient):
         "loan_notes": "Car purchase loan",
         "payment_frequency": "monthly",
     })
-    assert r.status_code == 200, r.text
+    assert r.status_code == 201, r.text
     data = r.json()
     assert data["account_type"] == "personal_loan"
     assert data["lender_name"] == "CommBank"
