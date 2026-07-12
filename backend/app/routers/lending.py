@@ -55,7 +55,9 @@ def _build_schedule(loan: LendingLoan) -> list[AmortisationRow]:
     monthly = _compute_monthly_payment(loan.principal, loan.interest_rate, loan.term_months, loan.repayment_type)
     balance = loan.principal
     rows = []
-    for i in range(1, loan.term_months + 1):
+    # Use first_payment_date as anchor for period 1, else start_date + 1 month
+    anchor = loan.first_payment_date if loan.first_payment_date else (loan.start_date + relativedelta(months=1))
+    for i in range(loan.term_months):
         interest = round(balance * r, 2)
         if loan.repayment_type == "interest_only":
             principal_portion = 0.0
@@ -63,9 +65,9 @@ def _build_schedule(loan: LendingLoan) -> list[AmortisationRow]:
         else:
             principal_portion = round(monthly - interest, 2)
             closing = round(max(0.0, balance - principal_portion), 2)
-        payment_date = (loan.start_date + relativedelta(months=i)).strftime("%Y-%m-%d")
+        payment_date = (anchor + relativedelta(months=i)).strftime("%Y-%m-%d")
         rows.append(AmortisationRow(
-            period=i,
+            period=i + 1,
             payment_date=payment_date,
             opening_balance=round(balance, 2),
             payment_amount=monthly,
@@ -102,6 +104,9 @@ async def _build_response(loan: LendingLoan, db: AsyncSession) -> LendingLoanRes
     )
     total_repaid = float(repaid_result.scalar() or 0.0)
     disbursed_amount = float(disbursed_result.scalar() or 0.0)
+    # Fall back to manually entered disbursement amount if no transactions are linked
+    if disbursed_amount == 0.0 and loan.manual_disbursement_amount:
+        disbursed_amount = float(loan.manual_disbursement_amount)
 
     monthly_payment = None
     total_interest = None
