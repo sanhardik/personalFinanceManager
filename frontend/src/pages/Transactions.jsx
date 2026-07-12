@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowLeftRight, Search, ChevronLeft, ChevronRight, Loader2, CheckCircle2, X, Sparkles, ArrowRight, Check, Link2, Scissors, Trash2 } from 'lucide-react';
 import { fetchTransactions, patchTransaction, bulkCategorise, fetchUncategorisedGroups, splitTransaction, unsplitTransaction } from '../api/transactions';
@@ -765,8 +765,8 @@ export default function Transactions() {
                     {transactions.map((tx) => {
                       const isPaired = transferPairs.has(tx.id);
                       return (
-                        <>
-                        <TableRow key={tx.id} className={cn(
+                        <React.Fragment key={tx.id}>
+                        <TableRow className={cn(
                           isPaired ? 'border-teal-100 bg-teal-50/40 hover:bg-teal-50' : 'border-slate-50',
                         )}>
                           <TableCell className="text-slate-500 whitespace-nowrap">{formatDate(tx.tx_date)}</TableCell>
@@ -923,7 +923,7 @@ export default function Transactions() {
                             </TableCell>
                           </TableRow>
                         ))}
-                        </>
+                        </React.Fragment>
                       );
                     })}
                   </TableBody>
