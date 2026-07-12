@@ -116,7 +116,7 @@ class AccountCreate(BaseModel):
     account_name: str = Field(default="", max_length=256)
     bank_name: str = Field(..., min_length=1, max_length=100)
     account_type: str = Field(
-        default="bank", pattern="^(bank|credit_card|home_loan|investment)$"
+        default="bank", pattern="^(bank|credit_card|home_loan|investment|personal_loan)$"
     )
     bsb: str | None = Field(default=None, max_length=12)
     linked_account_id: int | None = None
@@ -130,6 +130,12 @@ class AccountCreate(BaseModel):
         default=None, pattern="^(principal_and_interest|interest_only)$"
     )
     offset_account_id: int | None = None
+    # Personal loan fields
+    lender_name: str | None = Field(default=None, max_length=255)
+    loan_notes: str | None = None
+    payment_frequency: str | None = Field(
+        default=None, pattern="^(weekly|fortnightly|monthly)$"
+    )
 
 
 class AccountUpdate(BaseModel):
@@ -137,7 +143,7 @@ class AccountUpdate(BaseModel):
     account_name: str | None = Field(default=None, max_length=256)
     bank_name: str | None = Field(default=None, max_length=100)
     account_type: str | None = Field(
-        default=None, pattern="^(bank|credit_card|home_loan|investment)$"
+        default=None, pattern="^(bank|credit_card|home_loan|investment|personal_loan)$"
     )
     account_number: str | None = Field(default=None, min_length=1, max_length=256)
     bsb: str | None = Field(default=None, max_length=12)
@@ -155,6 +161,12 @@ class AccountUpdate(BaseModel):
         default=None, pattern="^(principal_and_interest|interest_only)$"
     )
     offset_account_id: int | None = None
+    # Personal loan fields
+    lender_name: str | None = Field(default=None, max_length=255)
+    loan_notes: str | None = None
+    payment_frequency: str | None = Field(
+        default=None, pattern="^(weekly|fortnightly|monthly)$"
+    )
 
 
 class AccountResponse(BaseModel):
@@ -177,6 +189,10 @@ class AccountResponse(BaseModel):
     loan_term_years: int | None = None
     loan_repayment_type: str | None = None
     offset_account_id: int | None = None
+    # Personal loan fields
+    lender_name: str | None = None
+    loan_notes: str | None = None
+    payment_frequency: str | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -332,6 +348,10 @@ class SuggestedRuleResponse(BaseModel):
 class LoanSummaryResponse(BaseModel):
     """GET /loans/{id}/summary — key metrics for a single loan."""
     account_id: int
+    account_type: str                        # "home_loan" | "personal_loan"
+    lender_name: str | None = None
+    loan_notes: str | None = None
+    payment_frequency: str | None = None
     account_name: str
     account_number: str
     bank_name: str

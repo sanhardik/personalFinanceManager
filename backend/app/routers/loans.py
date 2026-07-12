@@ -35,7 +35,7 @@ async def _get_loan_or_404(account_id: int, db: AsyncSession) -> Account:
     result = await db.execute(
         select(Account).where(
             Account.id == account_id,
-            Account.account_type == "home_loan",
+            Account.account_type.in_(["home_loan", "personal_loan"]),
         )
     )
     loan = result.scalar_one_or_none()
@@ -176,6 +176,10 @@ async def _loan_summary(loan: Account, db: AsyncSession) -> LoanSummaryResponse:
 
     return LoanSummaryResponse(
         account_id=loan.id,
+        account_type=loan.account_type,
+        lender_name=loan.lender_name,
+        loan_notes=loan.loan_notes,
+        payment_frequency=loan.payment_frequency,
         account_name=loan.account_name,
         account_number=loan.account_number,
         bank_name=loan.bank_name,
@@ -197,10 +201,10 @@ async def _loan_summary(loan: Account, db: AsyncSession) -> LoanSummaryResponse:
 
 @router.get("", response_model=list[LoanSummaryResponse])
 async def list_loans(db: AsyncSession = Depends(get_db)):
-    """Return all home_loan accounts with their summary metrics."""
+    """Return all home_loan and personal_loan accounts with their summary metrics."""
     result = await db.execute(
         select(Account)
-        .where(Account.account_type == "home_loan")
+        .where(Account.account_type.in_(["home_loan", "personal_loan"]))
         .order_by(Account.account_name)
     )
     loans = result.scalars().all()

@@ -243,3 +243,49 @@ async def test_loan_summary_with_linked_asset(client: AsyncClient):
     assert data["asset_id"] == asset_id
     assert data["asset"] is not None
     assert data["asset"]["asset_name"] == "Boondall Property"
+
+
+@pytest.mark.anyio
+async def test_create_personal_loan_account(client: AsyncClient):
+    """POST /accounts accepts personal_loan account_type with lender fields."""
+    r = await client.post("/accounts", json={
+        "account_number": "PL-001",
+        "account_name": "Car Loan",
+        "bank_name": "CommBank",
+        "account_type": "personal_loan",
+        "loan_original_amount": 25000,
+        "loan_interest_rate": 8.99,
+        "loan_start_date": "2025-01-15T00:00:00",
+        "loan_term_years": 5,
+        "loan_repayment_type": "principal_and_interest",
+        "lender_name": "CommBank",
+        "loan_notes": "Car purchase loan",
+        "payment_frequency": "monthly",
+    })
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["account_type"] == "personal_loan"
+    assert data["lender_name"] == "CommBank"
+    assert data["loan_notes"] == "Car purchase loan"
+    assert data["payment_frequency"] == "monthly"
+
+
+@pytest.mark.anyio
+async def test_loan_summary_includes_account_type(client: AsyncClient):
+    """GET /loans includes personal loans and returns account_type in response."""
+    await client.post("/accounts", json={
+        "account_number": "PL-002",
+        "account_name": "Renovation Loan",
+        "bank_name": "NAB",
+        "account_type": "personal_loan",
+        "loan_original_amount": 10000,
+        "lender_name": "NAB",
+        "payment_frequency": "fortnightly",
+    })
+    r = await client.get("/loans")
+    assert r.status_code == 200
+    pl = next((l for l in r.json() if l["account_number"] == "PL-002"), None)
+    assert pl is not None
+    assert pl["account_type"] == "personal_loan"
+    assert pl["lender_name"] == "NAB"
+    assert pl["payment_frequency"] == "fortnightly"
