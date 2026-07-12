@@ -515,6 +515,14 @@ function LoanCard({ loan, expanded, onToggleSchedule, onEdit, onDelete, onRefres
   };
 
   const saveDisbursement = async () => {
+    if (disbMode === 'link' && !disbTxId) {
+      alert('Please select a transaction to link.');
+      return;
+    }
+    if (disbMode === 'manual' && !disbAmount) {
+      alert('Please enter a disbursement amount.');
+      return;
+    }
     setDisbSaving(true);
     try {
       if (disbMode === 'link' && disbTxId) {
@@ -735,10 +743,14 @@ export default function Lending() {
         loan = await createLoan(payload);
       }
       if (disbursementTxId) {
-        await patchTransaction(disbursementTxId, {
-          lending_loan_id: loan.id,
-          lending_tx_type: 'disbursement',
-        });
+        try {
+          await patchTransaction(disbursementTxId, {
+            lending_loan_id: loan.id,
+            lending_tx_type: 'disbursement',
+          });
+        } catch {
+          alert('Loan saved, but disbursement transaction linking failed. You can link it manually from the Lending page.');
+        }
       }
       setShowForm(false);
       setEditingLoan(null);

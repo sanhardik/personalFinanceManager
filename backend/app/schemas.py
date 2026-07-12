@@ -508,7 +508,7 @@ class LendingLoanUpdate(BaseModel):
     principal: float | None = Field(default=None, gt=0)
     interest_rate: float | None = Field(default=None, gt=0)
     start_date: datetime | None = None
-    term_months: int | None = None
+    term_months: int | None = Field(default=None, gt=0)
     repayment_type: str | None = Field(default=None,
         pattern="^(principal_and_interest|interest_only)$")
     status: str | None = Field(default=None, pattern="^(active|paid_off|defaulted)$")
