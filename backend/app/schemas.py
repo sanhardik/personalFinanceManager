@@ -242,15 +242,19 @@ class TransactionResponse(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _normalise_splits(cls, data: object) -> object:
-        """Convert unloaded/empty splits list to None so we don't pollute responses."""
-        if hasattr(data, "__dict__"):
-            # ORM object — accessing .splits on a noload relationship gives []
+        """Convert empty splits list (from noload relationship) to None."""
+        if hasattr(data, "splits"):
             raw = getattr(data, "splits", None)
             if isinstance(raw, list) and len(raw) == 0:
-                # Return a dict copy so we can override splits=None
-                d = {k: getattr(data, k) for k in data.__mapper__.column_attrs.keys()}
-                d["splits"] = None
-                return d
+                # Build a plain dict from all table columns + set splits=None
+                # Let from_attributes handle everything else
+                col_dict = {c.name: getattr(data, c.name) for c in data.__table__.columns}
+                col_dict["splits"] = None
+                # Copy any eagerly-loaded relationships Task 2 may set
+                for rel in ("category", "transfer_account", "lending_loan", "parent_tx"):
+                    if hasattr(data, rel):
+                        col_dict[rel] = getattr(data, rel, None)
+                return col_dict
         return data
 
 

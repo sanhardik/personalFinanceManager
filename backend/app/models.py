@@ -259,7 +259,7 @@ class Transaction(Base):
         foreign_keys="Transaction.parent_transaction_id",
         back_populates="parent_tx",
         cascade="all, delete-orphan",
-        lazy="noload",
+        lazy="noload",  # Must use selectinload(Transaction.splits) when fetching parent rows
     )
     parent_tx: Mapped["Transaction | None"] = relationship(
         "Transaction",

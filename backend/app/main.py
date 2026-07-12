@@ -277,7 +277,7 @@ async def lifespan(app: FastAPI):
                 ))
                 if fk_exists.scalar() == 0:
                     await conn.execute(text(
-                        "ALTER TABLE transactions ADD CONSTRAINT fk_tx_parent "
+                        "ALTER TABLE transactions ADD CONSTRAINT IF NOT EXISTS fk_tx_parent "
                         "FOREIGN KEY (parent_transaction_id) REFERENCES transactions(id) ON DELETE CASCADE"
                     ))
                     logger.info("Migration: added FK fk_tx_parent on transactions.parent_transaction_id")
