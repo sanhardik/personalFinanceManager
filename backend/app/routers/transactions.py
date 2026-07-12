@@ -6,6 +6,7 @@ Routes:
   PATCH /transactions/{id} — manually set category
 """
 
+import hashlib
 import json
 from collections import defaultdict
 from datetime import date, timedelta
@@ -17,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Account, Category, Rule, SuggestedRule, Transaction
-from app.schemas import BulkCategoriseRequest, BulkCategoriseResponse, TransactionPatchResponse, TransactionResponse, TransactionUpdate
+from app.schemas import BulkCategoriseRequest, BulkCategoriseResponse, SplitRequest, TransactionPatchResponse, TransactionResponse, TransactionUpdate
 from app.services.categoriser import TRANSFER_CATEGORY_NAMES, _link_counterpart
 from app.services.pattern_extractor import AUTO_PROMOTE_THRESHOLD, extract_merchant_pattern
 
@@ -35,6 +36,13 @@ def _tx_to_response(tx: Transaction) -> dict:
     else:
         data["transfer_account_name"] = None
     data["lending_loan_name"] = tx.lending_loan.loan_name if tx.lending_loan else None
+    data["is_split_parent"] = tx.is_split_parent
+    data["parent_transaction_id"] = tx.parent_transaction_id
+    # Nested splits — only if eagerly loaded and non-empty
+    if tx.is_split_parent and hasattr(tx, "splits") and tx.splits:
+        data["splits"] = [_tx_to_response(s) for s in tx.splits]
+    else:
+        data["splits"] = None
     return data
 
 
@@ -61,6 +69,9 @@ async def list_transactions(
         selectinload(Transaction.lending_loan),
     )
     count_stmt = select(func.count(Transaction.id))
+
+    stmt = stmt.where(Transaction.is_split_parent == False)
+    count_stmt = count_stmt.where(Transaction.is_split_parent == False)
 
     if account_id:
         stmt = stmt.where(Transaction.account_id == account_id)
@@ -473,6 +484,127 @@ async def patch_transaction(
 
     response["rule_suggestion"] = rule_suggestion
     return response
+
+
+@router.post("/{tx_id}/split", response_model=dict)
+async def split_transaction(
+    tx_id: int,
+    body: SplitRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Split a transaction into N child transactions."""
+    result = await db.execute(
+        select(Transaction)
+        .options(
+            selectinload(Transaction.category),
+            selectinload(Transaction.transfer_account),
+            selectinload(Transaction.lending_loan),
+            selectinload(Transaction.splits),
+        )
+        .where(Transaction.id == tx_id)
+    )
+    tx = result.scalar_one_or_none()
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if tx.parent_transaction_id is not None:
+        raise HTTPException(status_code=400, detail="Cannot split a child transaction")
+
+    # Validate sum within ±$0.01
+    total = round(sum(s.amount for s in body.splits), 2)
+    if abs(total - tx.tx_amount) > 0.01:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Split amounts sum to {total:.2f} but transaction amount is {tx.tx_amount:.2f}",
+        )
+
+    # Delete existing children (re-split)
+    for child in list(tx.splits):
+        await db.delete(child)
+    await db.flush()
+
+    # Mark parent
+    tx.is_split_parent = True
+
+    # Create children
+    for i, split in enumerate(body.splits):
+        raw = f"{tx_id}|{i}|{split.amount}"
+        child_hash = hashlib.sha256(raw.encode()).hexdigest()
+        child = Transaction(
+            account_id=tx.account_id,
+            tx_date=tx.tx_date,
+            tx_desc=split.description,
+            tx_amount=split.amount,
+            tx_type=tx.tx_type,
+            tx_hash=child_hash,
+            is_categorised=split.category_id is not None,
+            category_id=split.category_id,
+            lending_loan_id=split.lending_loan_id,
+            lending_tx_type=split.lending_tx_type,
+            parent_transaction_id=tx_id,
+            is_split_parent=False,
+        )
+        db.add(child)
+
+    await db.commit()
+
+    # Reload with children
+    result = await db.execute(
+        select(Transaction)
+        .options(
+            selectinload(Transaction.category),
+            selectinload(Transaction.transfer_account),
+            selectinload(Transaction.lending_loan),
+            selectinload(Transaction.splits).options(
+                selectinload(Transaction.category),
+                selectinload(Transaction.transfer_account),
+                selectinload(Transaction.lending_loan),
+            ),
+        )
+        .where(Transaction.id == tx_id)
+    )
+    tx = result.scalar_one()
+    return _tx_to_response(tx)
+
+
+@router.delete("/{tx_id}/split", response_model=dict)
+async def unsplit_transaction(
+    tx_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove all child splits and restore the original transaction."""
+    result = await db.execute(
+        select(Transaction)
+        .options(
+            selectinload(Transaction.category),
+            selectinload(Transaction.transfer_account),
+            selectinload(Transaction.lending_loan),
+            selectinload(Transaction.splits),
+        )
+        .where(Transaction.id == tx_id)
+    )
+    tx = result.scalar_one_or_none()
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if not tx.is_split_parent:
+        raise HTTPException(status_code=400, detail="Transaction is not a split parent")
+
+    for child in list(tx.splits):
+        await db.delete(child)
+    tx.is_split_parent = False
+    await db.commit()
+
+    db.expire(tx, ["category", "transfer_account", "lending_loan", "splits"])
+    result = await db.execute(
+        select(Transaction)
+        .options(
+            selectinload(Transaction.category),
+            selectinload(Transaction.transfer_account),
+            selectinload(Transaction.lending_loan),
+        )
+        .where(Transaction.id == tx_id)
+    )
+    tx = result.scalar_one()
+    return _tx_to_response(tx)
 
 
 @router.delete("")

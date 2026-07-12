@@ -25,9 +25,10 @@ def _transfer_cat_ids():
 
 
 def _base_filters(date_from: date, date_to: date):
-    """Common WHERE clauses: date range + exclude transfer categories."""
+    """Common WHERE clauses: date range + exclude transfer categories + exclude split parents."""
     return [
         Transaction.tx_date.between(date_from, date_to),
+        Transaction.is_split_parent == False,
         or_(
             Transaction.category_id.is_(None),
             Transaction.category_id.notin_(_transfer_cat_ids()),
@@ -118,6 +119,7 @@ async def get_by_category(
         .where(
             Transaction.tx_date.between(date_from, date_to),
             Transaction.tx_type == tx_type,
+            Transaction.is_split_parent == False,
             or_(
                 Transaction.category_id.is_(None),
                 Transaction.category_id.notin_(_transfer_cat_ids()),
