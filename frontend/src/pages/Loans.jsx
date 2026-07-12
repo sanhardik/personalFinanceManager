@@ -44,17 +44,30 @@ function LoanCard({ loan, selected, onSelect }) {
     >
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">
-          <span className="p-2 rounded-lg bg-orange-50">
-            <Home size={18} className="text-orange-600" />
+          <span className={cn('p-2 rounded-lg', loan.account_type === 'personal_loan' ? 'bg-indigo-50' : 'bg-orange-50')}>
+            <Home size={18} className={loan.account_type === 'personal_loan' ? 'text-indigo-600' : 'text-orange-600'} />
           </span>
           <div>
             <h3 className="font-semibold text-slate-900 text-sm">{loan.account_name}</h3>
-            <p className="text-xs text-slate-400">{loan.bank_name}</p>
+            <p className="text-xs text-slate-400">
+              {loan.account_type === 'personal_loan' && loan.lender_name
+                ? loan.lender_name
+                : loan.bank_name}
+            </p>
           </div>
         </div>
-        {isInterestOnly && (
-          <Badge variant="secondary" className="text-xs font-medium bg-amber-100 text-amber-700 border-0">Interest Only</Badge>
-        )}
+        <div className="flex items-center gap-1.5">
+          <Badge variant="secondary" className={cn('text-xs font-medium border-0',
+            loan.account_type === 'personal_loan'
+              ? 'bg-indigo-100 text-indigo-700'
+              : 'bg-orange-100 text-orange-700'
+          )}>
+            {loan.account_type === 'personal_loan' ? 'Personal Loan' : 'Home Loan'}
+          </Badge>
+          {isInterestOnly && (
+            <Badge variant="secondary" className="text-xs font-medium bg-amber-100 text-amber-700 border-0">Interest Only</Badge>
+          )}
+        </div>
       </div>
 
       <div className="mb-3">
@@ -115,7 +128,10 @@ function LoanCard({ loan, selected, onSelect }) {
         )}
       </div>
 
-      {loan.asset && (
+      {loan.account_type === 'personal_loan' && loan.loan_notes && (
+        <p className="mt-2 text-xs text-slate-400 italic">{loan.loan_notes}</p>
+      )}
+      {loan.account_type !== 'personal_loan' && loan.asset && (
         <p className="mt-2 text-xs text-slate-400">
           {loan.asset.address_suburb
             ? `${loan.asset.address_street ? loan.asset.address_street + ', ' : ''}${loan.asset.address_suburb}`
@@ -179,7 +195,7 @@ export default function Loans() {
         <div className="text-center py-16 text-slate-400">
           <Home size={40} className="mx-auto mb-3 opacity-30" />
           <p className="text-sm">No loan accounts yet.</p>
-          <p className="text-xs mt-1">Upload a Macquarie loan CSV to get started.</p>
+          <p className="text-xs mt-1">Upload a Macquarie loan CSV or add a personal loan via Accounts.</p>
         </div>
       </div>
     );
@@ -189,7 +205,7 @@ export default function Loans() {
     <div className="max-w-5xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Loans</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Home loan and equity loan tracking</p>
+        <p className="text-sm text-slate-500 mt-0.5">Home loan and personal loan tracking</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -221,10 +237,36 @@ export default function Loans() {
             ))}
           </div>
 
+          {selectedLoan.account_type === 'personal_loan' && (selectedLoan.lender_name || selectedLoan.loan_notes || selectedLoan.payment_frequency) && (
+            <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-5">
+              <h3 className="text-sm font-semibold text-indigo-800 mb-3">Loan Details</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                {selectedLoan.lender_name && (
+                  <div>
+                    <p className="text-xs text-indigo-500">Lender</p>
+                    <p className="font-medium text-indigo-900">{selectedLoan.lender_name}</p>
+                  </div>
+                )}
+                {selectedLoan.payment_frequency && (
+                  <div>
+                    <p className="text-xs text-indigo-500">Payment Frequency</p>
+                    <p className="font-medium text-indigo-900 capitalize">{selectedLoan.payment_frequency}</p>
+                  </div>
+                )}
+                {selectedLoan.loan_notes && (
+                  <div className="col-span-full">
+                    <p className="text-xs text-indigo-500">Notes</p>
+                    <p className="font-medium text-indigo-900">{selectedLoan.loan_notes}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {historyLoading && <p className="text-sm text-slate-400">Loading history…</p>}
 
           {!historyLoading && history.length > 0 && (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <div className={cn('grid gap-6', selectedLoan.account_type === 'personal_loan' ? 'grid-cols-1' : 'grid-cols-1 xl:grid-cols-2')}>
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-semibold text-slate-700">Balance Over Time</CardTitle>
@@ -242,24 +284,26 @@ export default function Loans() {
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-semibold text-slate-700">Monthly: Interest vs Principal</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ChartContainer config={breakdownChartConfig} className="h-56 w-full">
-                    <BarChart data={breakdownData} margin={{ top: 5, right: 10, bottom: 5, left: 10 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#9ca3af' }} tickFormatter={m => m.slice(2)} />
-                      <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} tickFormatter={v => `$${(v / 1000).toFixed(1)}k`} width={55} />
-                      <ChartTooltip content={<ChartTooltipContent />} />
-                      <ChartLegend content={<ChartLegendContent />} />
-                      <Bar dataKey="Interest" stackId="a" fill="#f97316" radius={[0, 0, 0, 0]} />
-                      <Bar dataKey="Principal" stackId="a" fill="#22c55e" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ChartContainer>
-                </CardContent>
-              </Card>
+              {selectedLoan.account_type !== 'personal_loan' && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-semibold text-slate-700">Monthly: Interest vs Principal</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={breakdownChartConfig} className="h-56 w-full">
+                      <BarChart data={breakdownData} margin={{ top: 5, right: 10, bottom: 5, left: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#9ca3af' }} tickFormatter={m => m.slice(2)} />
+                        <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} tickFormatter={v => `$${(v / 1000).toFixed(1)}k`} width={55} />
+                        <ChartTooltip content={<ChartTooltipContent />} />
+                        <ChartLegend content={<ChartLegendContent />} />
+                        <Bar dataKey="Interest" stackId="a" fill="#f97316" radius={[0, 0, 0, 0]} />
+                        <Bar dataKey="Principal" stackId="a" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ChartContainer>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           )}
 
@@ -273,7 +317,7 @@ export default function Loans() {
             </Card>
           )}
 
-          {selectedLoan.asset && selectedLoan.asset.asset_type === 'property' && (
+          {selectedLoan.account_type !== 'personal_loan' && selectedLoan.asset && selectedLoan.asset.asset_type === 'property' && (
             <div className="bg-orange-50 border border-orange-100 rounded-xl p-5">
               <h3 className="text-sm font-semibold text-orange-800 mb-3">Linked Property</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
