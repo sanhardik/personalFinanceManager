@@ -9,7 +9,7 @@ Naming convention:
 
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # ── Assets ──────────────────────────────────────────────────
@@ -232,9 +232,38 @@ class TransactionResponse(BaseModel):
     lending_loan_id: int | None = None
     lending_tx_type: str | None = None
     lending_loan_name: str | None = None
+    is_split_parent: bool = False
+    parent_transaction_id: int | None = None
+    splits: list["TransactionResponse"] | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalise_splits(cls, data: object) -> object:
+        """Convert unloaded/empty splits list to None so we don't pollute responses."""
+        if hasattr(data, "__dict__"):
+            # ORM object — accessing .splits on a noload relationship gives []
+            raw = getattr(data, "splits", None)
+            if isinstance(raw, list) and len(raw) == 0:
+                # Return a dict copy so we can override splits=None
+                d = {k: getattr(data, k) for k in data.__mapper__.column_attrs.keys()}
+                d["splits"] = None
+                return d
+        return data
+
+
+class SplitItem(BaseModel):
+    description: str = Field(..., min_length=1, max_length=500)
+    amount: float = Field(..., gt=0)
+    category_id: int | None = None
+    lending_loan_id: int | None = None
+    lending_tx_type: str | None = Field(default=None, pattern="^(disbursement|repayment)$")
+
+
+class SplitRequest(BaseModel):
+    splits: list[SplitItem] = Field(..., min_length=2)
 
 
 class SuggestedRuleHint(BaseModel):

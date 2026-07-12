@@ -235,6 +235,10 @@ class Transaction(Base):
     )
     lending_tx_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # "disbursement" | "repayment"
+    is_split_parent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="0")
+    parent_transaction_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("transactions.id", ondelete="CASCADE"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
@@ -249,6 +253,20 @@ class Transaction(Base):
     )
     lending_loan: Mapped["LendingLoan | None"] = relationship(
         "LendingLoan", foreign_keys="Transaction.lending_loan_id", back_populates="transactions"
+    )
+    splits: Mapped[list["Transaction"]] = relationship(
+        "Transaction",
+        foreign_keys="Transaction.parent_transaction_id",
+        back_populates="parent_tx",
+        cascade="all, delete-orphan",
+        lazy="noload",
+    )
+    parent_tx: Mapped["Transaction | None"] = relationship(
+        "Transaction",
+        foreign_keys="Transaction.parent_transaction_id",
+        back_populates="splits",
+        remote_side="Transaction.id",
+        lazy="noload",
     )
 
     @staticmethod

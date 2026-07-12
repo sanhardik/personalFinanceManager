@@ -250,6 +250,40 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Migration: personal loan fields check failed (non-fatal): %s", e)
 
+        # Schema migrations — transaction split columns
+        try:
+            async with engine.begin() as conn:
+                for col_name, col_def in [
+                    ("is_split_parent", "BOOLEAN NOT NULL DEFAULT FALSE"),
+                    ("parent_transaction_id", "INT NULL"),
+                ]:
+                    exists = await conn.execute(text(
+                        "SELECT COUNT(*) FROM information_schema.COLUMNS "
+                        "WHERE TABLE_SCHEMA = DATABASE() "
+                        "AND TABLE_NAME = 'transactions' AND COLUMN_NAME = :col"
+                    ), {"col": col_name})
+                    if exists.scalar() == 0:
+                        await conn.execute(text(
+                            f"ALTER TABLE transactions ADD COLUMN {col_name} {col_def}"
+                        ))
+                        logger.info("Migration: added %s to transactions", col_name)
+                # Add FK constraint on parent_transaction_id if not present
+                fk_exists = await conn.execute(text(
+                    "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE "
+                    "WHERE TABLE_SCHEMA = DATABASE() "
+                    "AND TABLE_NAME = 'transactions' "
+                    "AND COLUMN_NAME = 'parent_transaction_id' "
+                    "AND REFERENCED_TABLE_NAME = 'transactions'"
+                ))
+                if fk_exists.scalar() == 0:
+                    await conn.execute(text(
+                        "ALTER TABLE transactions ADD CONSTRAINT fk_tx_parent "
+                        "FOREIGN KEY (parent_transaction_id) REFERENCES transactions(id) ON DELETE CASCADE"
+                    ))
+                    logger.info("Migration: added FK fk_tx_parent on transactions.parent_transaction_id")
+        except Exception as e:
+            logger.warning("Migration: split columns failed (non-fatal): %s", e)
+
     # Seed default categories + rules (idempotent — skips existing)
     try:
         async with async_session_factory() as session:
