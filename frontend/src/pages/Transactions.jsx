@@ -6,6 +6,7 @@ import DateRangePicker from '../components/DateRangePicker';
 import { useTransactionStats } from '../contexts/TransactionStatsContext';
 import { fetchAccounts } from '../api/accounts';
 import { fetchCategories } from '../api/categories';
+import { fetchLoans } from '../api/lending';
 import { acceptSuggestion, dismissSuggestion } from '../api/rules';
 import { CategoryOptions } from '../utils/categoryGroups.jsx';
 import { SortableHeader } from '../components/SortableHeader';
@@ -38,6 +39,7 @@ export default function Transactions() {
   const [transactions, setTransactions] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [loans, setLoans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState({ total: 0, page: 1, pages: 0, per_page: 50 });
 
@@ -65,6 +67,7 @@ export default function Transactions() {
   const [awaitingTransferAccount, setAwaitingTransferAccount] = useState(false);
   const [pendingCategoryId, setPendingCategoryId] = useState(null);
   const [pendingTransferAccountId, setPendingTransferAccountId] = useState('');
+  const [pendingLoanId, setPendingLoanId] = useState(null);
   const selectRef = useRef(null);
 
   const [transferMatchBanner, setTransferMatchBanner] = useState(null);
@@ -104,15 +107,18 @@ export default function Transactions() {
   useEffect(() => { loadTransactions(1); }, [loadTransactions]);
 
   useEffect(() => {
-    fetchAccounts().then(setAccounts).catch(console.error);
-    fetchCategories().then((cats) => {
-      setCategories(cats);
-      if (pendingCategoryName) {
-        const match = cats.find((c) => c.name.toLowerCase() === pendingCategoryName.toLowerCase());
-        if (match) setCategoryFilter(String(match.id));
-        setPendingCategoryName('');
-      }
-    }).catch(console.error);
+    Promise.all([fetchAccounts(), fetchCategories(), fetchLoans()])
+      .then(([accsData, cats, loansData]) => {
+        setAccounts(accsData);
+        setCategories(cats);
+        setLoans(loansData.filter(l => l.status === 'active'));
+        if (pendingCategoryName) {
+          const match = cats.find((c) => c.name.toLowerCase() === pendingCategoryName.toLowerCase());
+          if (match) setCategoryFilter(String(match.id));
+          setPendingCategoryName('');
+        }
+      })
+      .catch(console.error);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -130,7 +136,7 @@ export default function Transactions() {
     const handler = (e) => {
       if (selectRef.current && !selectRef.current.contains(e.target)) {
         if (awaitingTransferAccount && pendingCategoryId) {
-          saveCategoryChange(editingCategoryTxId, pendingCategoryId, pendingTransferAccountId || null);
+          saveCategoryChange(editingCategoryTxId, pendingCategoryId, pendingTransferAccountId || null, pendingLoanId);
         } else {
           setEditingCategoryTxId(null);
         }
@@ -138,19 +144,27 @@ export default function Transactions() {
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [editingCategoryTxId, awaitingTransferAccount, pendingCategoryId, pendingTransferAccountId]);
+  }, [editingCategoryTxId, awaitingTransferAccount, pendingCategoryId, pendingTransferAccountId, pendingLoanId]);
 
   const isTransferCategory = (catId) => {
     const cat = categories.find(c => c.id === catId);
     return cat?.name?.toLowerCase().includes('transfer') ?? false;
   };
 
-  const saveCategoryChange = async (txId, categoryId, transferAccountId) => {
+  const saveCategoryChange = async (txId, categoryId, transferAccountId, loanId = null) => {
     setSuggestion(null);
     setRuleSuggestion(null);
     setTransferMatchBanner(null);
     try {
-      const body = { category_id: categoryId, transfer_account_id: transferAccountId ? parseInt(transferAccountId) : null };
+      const body = { category_id: categoryId };
+      if (loanId) {
+        body.lending_loan_id = loanId;
+        const tx = transactions.find(t => t.id === txId);
+        body.lending_tx_type = tx?.tx_type === 'Expense' ? 'disbursement' : 'repayment';
+        body.transfer_account_id = null;
+      } else {
+        body.transfer_account_id = transferAccountId ? parseInt(transferAccountId) : null;
+      }
       const updated = await patchTransaction(txId, body);
       setTransactions(prev => prev.map(tx => tx.id === txId ? { ...tx, ...updated } : tx));
       refreshStats();
@@ -181,6 +195,7 @@ export default function Transactions() {
       setAwaitingTransferAccount(false);
       setPendingCategoryId(null);
       setPendingTransferAccountId('');
+      setPendingLoanId(null);
     }
   };
 
@@ -582,21 +597,41 @@ export default function Transactions() {
                                     <ArrowRight size={12} className="text-slate-400 flex-shrink-0" />
                                     <select
                                       autoFocus
-                                      value={pendingTransferAccountId}
-                                      onChange={e => setPendingTransferAccountId(e.target.value)}
+                                      value={pendingLoanId ? `loan_${pendingLoanId}` : pendingTransferAccountId}
+                                      onChange={e => {
+                                        const val = e.target.value;
+                                        if (val.startsWith('loan_')) {
+                                          setPendingLoanId(parseInt(val.replace('loan_', '')));
+                                          setPendingTransferAccountId('');
+                                        } else {
+                                          setPendingTransferAccountId(val);
+                                          setPendingLoanId(null);
+                                        }
+                                      }}
                                       className="px-2 py-1 border border-blue-400 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-32"
                                     >
                                       <option value="">— which account?</option>
-                                      {accounts.filter(a => a.id !== tx.account_id).map(a => {
-                                        const last4 = a.account_number?.slice(-4);
-                                        const label = last4 ? `${a.account_name} (****${last4})` : a.account_name || a.account_number;
-                                        return <option key={a.id} value={a.id}>{label}</option>;
-                                      })}
+                                      <optgroup label="Accounts">
+                                        {accounts.filter(a => a.id !== tx.account_id).map(a => {
+                                          const last4 = a.account_number?.slice(-4);
+                                          const label = last4 ? `${a.account_name} (****${last4})` : a.account_name || a.account_number;
+                                          return <option key={a.id} value={a.id}>{label}</option>;
+                                        })}
+                                      </optgroup>
+                                      {loans.length > 0 && (
+                                        <optgroup label="Loans">
+                                          {loans.map(l => (
+                                            <option key={l.id} value={`loan_${l.id}`}>
+                                              {l.loan_name}{l.borrower_name ? ` (${l.borrower_name})` : ''}
+                                            </option>
+                                          ))}
+                                        </optgroup>
+                                      )}
                                     </select>
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      onClick={() => saveCategoryChange(tx.id, pendingCategoryId, pendingTransferAccountId || null)}
+                                      onClick={() => saveCategoryChange(tx.id, pendingCategoryId, pendingTransferAccountId || null, pendingLoanId)}
                                       className="h-6 w-6 text-green-600 hover:bg-green-50"
                                     >
                                       <Check size={13} />
@@ -610,6 +645,7 @@ export default function Transactions() {
                                   setEditingCategoryTxId(tx.id);
                                   setPendingCategoryId(tx.category_id || null);
                                   setPendingTransferAccountId(tx.transfer_account_id ? String(tx.transfer_account_id) : '');
+                                  setPendingLoanId(null);
                                   setAwaitingTransferAccount(false);
                                 }}
                                 className="flex items-center gap-1.5 group"
@@ -621,6 +657,9 @@ export default function Transactions() {
                                     <span className="text-xs text-slate-700 group-hover:text-blue-600 transition-colors">{tx.category_name}</span>
                                     {tx.transfer_account_name && (
                                       <span className="text-xs text-slate-500 ml-0.5">→ {tx.transfer_account_name}</span>
+                                    )}
+                                    {tx.lending_loan_name && (
+                                      <span className="text-xs text-indigo-600 ml-0.5">→ {tx.lending_loan_name}</span>
                                     )}
                                     {isPaired && (
                                       <Link2 size={11} className="text-teal-500 flex-shrink-0 ml-0.5" title="Matched transfer pair" />
