@@ -417,6 +417,9 @@ class LendingLoan(Base):
     # Property-share fields
     asset_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("assets.id", ondelete="SET NULL"), nullable=True)
     ownership_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    first_payment_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    manual_disbursement_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    manual_disbursement_amount: Mapped[float | None] = mapped_column(Float(precision=2), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 

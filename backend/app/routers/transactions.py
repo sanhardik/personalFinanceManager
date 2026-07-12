@@ -34,6 +34,7 @@ def _tx_to_response(tx: Transaction) -> dict:
         data["transfer_account_name"] = f"{acc.account_name} (****{last4})"
     else:
         data["transfer_account_name"] = None
+    data["lending_loan_name"] = tx.lending_loan.loan_name if tx.lending_loan else None
     return data
 
 
@@ -57,6 +58,7 @@ async def list_transactions(
     stmt = select(Transaction).options(
         selectinload(Transaction.category),
         selectinload(Transaction.transfer_account),
+        selectinload(Transaction.lending_loan),
     )
     count_stmt = select(func.count(Transaction.id))
 
@@ -260,7 +262,7 @@ async def patch_transaction(
     """
     result = await db.execute(
         select(Transaction)
-        .options(selectinload(Transaction.category), selectinload(Transaction.transfer_account))
+        .options(selectinload(Transaction.category), selectinload(Transaction.transfer_account), selectinload(Transaction.lending_loan))
         .where(Transaction.id == tx_id)
     )
     tx = result.scalar_one_or_none()
@@ -300,10 +302,10 @@ async def patch_transaction(
     await db.commit()
 
     # Expire cached relationships so reload fetches updated values
-    db.expire(tx, ["category", "transfer_account"])
+    db.expire(tx, ["category", "transfer_account", "lending_loan"])
     result = await db.execute(
         select(Transaction)
-        .options(selectinload(Transaction.category), selectinload(Transaction.transfer_account))
+        .options(selectinload(Transaction.category), selectinload(Transaction.transfer_account), selectinload(Transaction.lending_loan))
         .where(Transaction.id == tx_id)
     )
     tx = result.scalar_one()

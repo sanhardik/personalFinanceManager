@@ -208,6 +208,27 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Migration: lending columns failed (non-fatal): %s", e)
 
+        # Schema migrations — lending_loans new optional columns
+        try:
+            async with engine.begin() as conn:
+                for col_name, col_def in [
+                    ("first_payment_date", "DATE NULL"),
+                    ("manual_disbursement_date", "DATE NULL"),
+                    ("manual_disbursement_amount", "DECIMAL(12,2) NULL"),
+                ]:
+                    exists = await conn.execute(text(
+                        "SELECT COUNT(*) FROM information_schema.COLUMNS "
+                        "WHERE TABLE_SCHEMA = DATABASE() "
+                        "AND TABLE_NAME = 'lending_loans' AND COLUMN_NAME = :col"
+                    ), {"col": col_name})
+                    if exists.scalar() == 0:
+                        await conn.execute(text(
+                            f"ALTER TABLE lending_loans ADD COLUMN {col_name} {col_def}"
+                        ))
+                        logger.info("Migration: added %s to lending_loans", col_name)
+        except Exception as e:
+            logger.warning("Migration: lending_loans new columns failed (non-fatal): %s", e)
+
     # Seed default categories + rules (idempotent — skips existing)
     try:
         async with async_session_factory() as session:

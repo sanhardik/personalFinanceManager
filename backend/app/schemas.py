@@ -215,6 +215,7 @@ class TransactionResponse(BaseModel):
     transfer_account_name: str | None = None
     lending_loan_id: int | None = None
     lending_tx_type: str | None = None
+    lending_loan_name: str | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -495,6 +496,9 @@ class LendingLoanCreate(BaseModel):
     notes: str | None = None
     asset_id: int | None = None
     ownership_pct: float | None = Field(default=None, gt=0, le=100)
+    first_payment_date: datetime | None = None
+    manual_disbursement_date: datetime | None = None
+    manual_disbursement_amount: float | None = Field(default=None, gt=0)
 
 
 class LendingLoanUpdate(BaseModel):
@@ -511,6 +515,9 @@ class LendingLoanUpdate(BaseModel):
     notes: str | None = None
     asset_id: int | None = None
     ownership_pct: float | None = Field(default=None, gt=0, le=100)
+    first_payment_date: datetime | None = None
+    manual_disbursement_date: datetime | None = None
+    manual_disbursement_amount: float | None = Field(default=None, gt=0)
 
 
 class LendingLoanResponse(BaseModel):
@@ -532,6 +539,9 @@ class LendingLoanResponse(BaseModel):
     total_interest: float | None
     total_repaid: float
     disbursed_amount: float
+    first_payment_date: datetime | None = None
+    manual_disbursement_date: datetime | None = None
+    manual_disbursement_amount: float | None = None
     asset: "AssetResponse | None"
 
     model_config = ConfigDict(from_attributes=True)
