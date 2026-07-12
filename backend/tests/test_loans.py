@@ -411,6 +411,52 @@ async def test_personal_loan_seed_categories_exist(client: AsyncClient):
 
 
 @pytest.mark.anyio
+async def test_personal_loan_balance_decrements_after_payment(client: AsyncClient):
+    """Personal loan balance decreases when a bank transaction is linked via transfer_account_id."""
+    r = await client.post("/accounts", json={
+        "account_number": "PL-DECR-001",
+        "account_name": "Decrement Loan",
+        "bank_name": "CommBank",
+        "account_type": "personal_loan",
+        "loan_original_amount": 10000.0,
+        "lender_name": "CommBank",
+        "payment_frequency": "monthly",
+    })
+    assert r.status_code == 201
+    loan_account_id = r.json()["id"]
+
+    # Upload Westpac CSV to create a bank account with real transactions
+    with open(os.path.join(FIXTURES_DIR, "westpac_sample.csv"), "rb") as f:
+        upload_r = await client.post(
+            "/upload",
+            files={"file": ("westpac_sample.csv", f, "text/csv")},
+        )
+    assert upload_r.status_code == 200
+
+    # Fetch a transaction from the uploaded bank account
+    tx_r = await client.get("/transactions", params={"per_page": 1})
+    assert tx_r.status_code == 200
+    items = tx_r.json()["items"]
+    assert len(items) > 0
+    tx_id = items[0]["id"]
+    payment_amount = abs(items[0]["tx_amount"])
+
+    # Link the bank transaction to the personal loan via transfer_account_id
+    patch_r = await client.patch(f"/transactions/{tx_id}", json={
+        "transfer_account_id": loan_account_id,
+    })
+    assert patch_r.status_code == 200
+
+    # Verify loan balance has decreased by the payment amount
+    summary_r = await client.get(f"/loans/{loan_account_id}/summary")
+    assert summary_r.status_code == 200
+    data = summary_r.json()
+    expected_balance = 10000.0 - payment_amount
+    assert data["current_balance"] == pytest.approx(max(0.0, expected_balance), abs=0.01)
+    assert data["current_balance"] < 10000.0
+
+
+@pytest.mark.anyio
 async def test_personal_loan_update_fields(client: AsyncClient):
     """PUT /accounts/{id} updates lender_name and loan_notes for a personal loan."""
     r = await client.post("/accounts", json={

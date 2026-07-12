@@ -80,11 +80,11 @@ async def _loan_summary(loan: Account, db: AsyncSession) -> LoanSummaryResponse:
 
     # Current balance — calculation differs by loan type
     if loan.account_type == "personal_loan":
-        # Personal loans: balance = original_amount - SUM of all Income (repayment) transactions
+        # Personal loans have no transactions of their own — repayments are bank
+        # Transfer Out transactions linked to this loan via transfer_account_id.
         payments_result = await db.execute(
-            select(func.coalesce(func.sum(Transaction.tx_amount), 0.0))
-            .where(Transaction.account_id == loan.id)
-            .where(Transaction.tx_type == "Income")
+            select(func.coalesce(func.sum(func.abs(Transaction.tx_amount)), 0.0))
+            .where(Transaction.transfer_account_id == loan.id)
         )
         total_paid = float(payments_result.scalar() or 0.0)
         if loan.loan_original_amount is not None:
