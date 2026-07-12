@@ -48,6 +48,8 @@ DEFAULT_CATEGORIES: list[tuple[str, str, str, str]] = [
     ("Home Loan Interest", "Expense", "Percent", "#f97316"),
     ("Loan Drawdown", "Expense", "Building2", "#78716c"),
     ("Bank Fees", "Expense", "Receipt", "#94a3b8"),
+    ("Personal Loan Interest", "Expense", "Percent", "#6366f1"),
+    ("Personal Loan Payment", "Income", "CreditCard", "#6366f1"),
     ("Other Expense", "Expense", "MoreHorizontal", "#94a3b8"),
     # ── Income categories ──
     ("Home Loan Payment", "Income", "Home", "#22c55e"),

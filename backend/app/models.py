@@ -82,10 +82,11 @@ class Account(Base):
     Bank account, credit card, or home loan.
 
     account_type values:
-      - "bank"        — transaction/savings account
-      - "credit_card" — credit card (last 4 digits as account_number)
-      - "home_loan"   — mortgage / home loan
-      - "investment"  — investment / brokerage account (e.g. Spaceship, CommSec)
+      - "bank"          — transaction/savings account
+      - "credit_card"   — credit card (last 4 digits as account_number)
+      - "home_loan"     — mortgage / home loan
+      - "personal_loan" — personal loan the user is paying back
+      - "investment"    — investment / brokerage account (e.g. Spaceship, CommSec)
 
     linked_account_id: optional FK to the bank account that pays this account.
     asset_id: optional FK to an Asset this loan is secured against.
@@ -126,6 +127,13 @@ class Account(Base):
     offset_account_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("accounts.id"), nullable=True
     )  # Future: linked offset account
+
+    # Personal loan fields — only relevant when account_type = "personal_loan"
+    lender_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    loan_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payment_frequency: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )  # "weekly", "fortnightly", "monthly"
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
