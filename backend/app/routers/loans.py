@@ -78,19 +78,30 @@ def _projected_payoff(
 async def _loan_summary(loan: Account, db: AsyncSession) -> LoanSummaryResponse:
     """Build a LoanSummaryResponse for a single loan account."""
 
-    # Current balance = abs of latest transaction balance (loans have negative balance).
-    # Macquarie CSVs list payment (Credit/Income) before interest on the same date — the
-    # payment reflects the final balance for that day. We pick Income transactions first
-    # (tx_type ASC → "Income" < "Expense") as tiebreaker so the payment row wins.
-    latest_balance_result = await db.execute(
-        select(Transaction.balance)
-        .where(Transaction.account_id == loan.id)
-        .where(Transaction.balance.isnot(None))
-        .order_by(Transaction.tx_date.desc(), Transaction.tx_type.desc(), Transaction.id.asc())
-        .limit(1)
-    )
-    latest_balance_raw = latest_balance_result.scalar_one_or_none()
-    current_balance = abs(latest_balance_raw) if latest_balance_raw is not None else None
+    # Current balance — calculation differs by loan type
+    if loan.account_type == "personal_loan":
+        # Personal loans: balance = original_amount - SUM of all Income (repayment) transactions
+        payments_result = await db.execute(
+            select(func.coalesce(func.sum(Transaction.tx_amount), 0.0))
+            .where(Transaction.account_id == loan.id)
+            .where(Transaction.tx_type == "Income")
+        )
+        total_paid = float(payments_result.scalar() or 0.0)
+        if loan.loan_original_amount is not None:
+            current_balance = max(0.0, loan.loan_original_amount - total_paid)
+        else:
+            current_balance = None
+    else:
+        # Home loans: balance from latest transaction's balance column (Macquarie CSV)
+        latest_balance_result = await db.execute(
+            select(Transaction.balance)
+            .where(Transaction.account_id == loan.id)
+            .where(Transaction.balance.isnot(None))
+            .order_by(Transaction.tx_date.desc(), Transaction.tx_type.desc(), Transaction.id.asc())
+            .limit(1)
+        )
+        latest_balance_raw = latest_balance_result.scalar_one_or_none()
+        current_balance = abs(latest_balance_raw) if latest_balance_raw is not None else None
 
     # Total interest paid = sum of all Expense transactions matching "Home Loan Interest"
     interest_cat = await db.execute(

@@ -289,3 +289,34 @@ async def test_loan_summary_includes_account_type(client: AsyncClient):
     assert pl["account_type"] == "personal_loan"
     assert pl["lender_name"] == "NAB"
     assert pl["payment_frequency"] == "fortnightly"
+
+
+@pytest.mark.anyio
+async def test_personal_loan_balance_from_payments(client: AsyncClient):
+    """Personal loan balance = original_amount - sum of transfer payments."""
+    r = await client.post("/accounts", json={
+        "account_number": "PL-BAL-001",
+        "account_name": "Balance Test Loan",
+        "bank_name": "TestBank",
+        "account_type": "personal_loan",
+        "loan_original_amount": 10000.0,
+        "lender_name": "TestBank",
+        "payment_frequency": "monthly",
+    })
+    assert r.status_code == 201
+    loan_account_id = r.json()["id"]
+
+    r2 = await client.post("/accounts", json={
+        "account_number": "BANK-BAL-001",
+        "account_name": "My Bank",
+        "bank_name": "Westpac",
+        "account_type": "bank",
+    })
+    assert r2.status_code == 201
+
+    r3 = await client.get(f"/loans/{loan_account_id}/summary")
+    assert r3.status_code == 200
+    data = r3.json()
+    assert data["account_type"] == "personal_loan"
+    assert data["current_balance"] == 10000.0
+    assert data["percent_paid"] == 0.0
