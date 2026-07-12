@@ -27,3 +27,8 @@ export const bulkCategorise = (transaction_ids, category_id, transfer_account_id
 
 export const fetchUncategorisedGroups = () =>
   api.get('/transactions/uncategorised-groups').then(r => r.data);
+
+export const splitTransaction = (id, splits) =>
+  api.post(`/transactions/${id}/split`, { splits }).then(r => r.data);
+export const unsplitTransaction = (id) =>
+  api.delete(`/transactions/${id}/split`).then(r => r.data);

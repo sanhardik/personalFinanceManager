@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowLeftRight, Search, ChevronLeft, ChevronRight, Loader2, CheckCircle2, X, Sparkles, ArrowRight, Check, Link2 } from 'lucide-react';
-import { fetchTransactions, patchTransaction, bulkCategorise, fetchUncategorisedGroups } from '../api/transactions';
+import { ArrowLeftRight, Search, ChevronLeft, ChevronRight, Loader2, CheckCircle2, X, Sparkles, ArrowRight, Check, Link2, Scissors, Trash2 } from 'lucide-react';
+import { fetchTransactions, patchTransaction, bulkCategorise, fetchUncategorisedGroups, splitTransaction, unsplitTransaction } from '../api/transactions';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
 import DateRangePicker from '../components/DateRangePicker';
 import { useTransactionStats } from '../contexts/TransactionStatsContext';
 import { fetchAccounts } from '../api/accounts';
@@ -22,6 +25,190 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { cn } from '@/lib/utils';
 
 const SESSION_KEY = 'categorise_streak';
+
+function SplitDialog({ tx, categories, loans, onClose, onSaved }) {
+  const [rows, setRows] = useState(() => {
+    if (tx.splits && tx.splits.length >= 2) {
+      return tx.splits.map(s => ({
+        description: s.tx_desc,
+        amount: String(s.tx_amount),
+        category_id: s.category_id ? String(s.category_id) : '',
+        lending_loan_id: s.lending_loan_id ? String(s.lending_loan_id) : '',
+        lending_tx_type: s.lending_tx_type || '',
+      }));
+    }
+    return [
+      { description: tx.tx_desc, amount: '', category_id: '', lending_loan_id: '', lending_tx_type: '' },
+      { description: tx.tx_desc, amount: '', category_id: '', lending_loan_id: '', lending_tx_type: '' },
+    ];
+  });
+  const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
+
+  const setRow = (i, key, val) =>
+    setRows(prev => prev.map((r, idx) => idx === i ? { ...r, [key]: val } : r));
+
+  const addRow = () =>
+    setRows(prev => [...prev, { description: tx.tx_desc, amount: '', category_id: '', lending_loan_id: '', lending_tx_type: '' }]);
+
+  const removeRow = (i) =>
+    setRows(prev => prev.filter((_, idx) => idx !== i));
+
+  const total = rows.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+  const remainder = Math.round((tx.tx_amount - total) * 100) / 100;
+  const balanced = Math.abs(remainder) <= 0.01;
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const splits = rows.map(r => ({
+        description: r.description.trim() || tx.tx_desc,
+        amount: parseFloat(r.amount),
+        category_id: r.category_id ? parseInt(r.category_id) : null,
+        lending_loan_id: r.lending_loan_id ? parseInt(r.lending_loan_id) : null,
+        lending_tx_type: r.lending_tx_type || null,
+      }));
+      const updated = await splitTransaction(tx.id, splits);
+      onSaved(updated);
+      onClose();
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Failed to save splits');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemove = async () => {
+    if (!confirm('Remove split and restore original transaction?')) return;
+    setRemoving(true);
+    try {
+      const updated = await unsplitTransaction(tx.id);
+      onSaved(updated);
+      onClose();
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Failed to remove split');
+    } finally {
+      setRemoving(false);
+    }
+  };
+
+  const nativeSelectCls = 'flex h-8 w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Split Transaction</DialogTitle>
+        </DialogHeader>
+
+        {/* Header: original transaction */}
+        <div className="bg-slate-50 rounded-lg px-4 py-3 text-sm mb-4">
+          <p className="text-slate-500 text-xs mb-0.5">{new Date(tx.tx_date).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+          <p className="font-medium text-slate-800">{tx.tx_desc}</p>
+          <p className="text-lg font-bold text-slate-900 mt-0.5">
+            {tx.tx_type === 'Income' ? '+' : '-'}${tx.tx_amount.toFixed(2)}
+          </p>
+        </div>
+
+        {/* Split rows */}
+        <div className="space-y-2">
+          {rows.map((row, i) => (
+            <div key={i} className="grid grid-cols-12 gap-2 items-center">
+              <div className="col-span-4">
+                <input
+                  className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  placeholder="Description"
+                  value={row.description}
+                  onChange={e => setRow(i, 'description', e.target.value)}
+                />
+              </div>
+              <div className="col-span-2">
+                <input
+                  type="number" min="0.01" step="0.01"
+                  className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  placeholder="Amount"
+                  value={row.amount}
+                  onChange={e => setRow(i, 'amount', e.target.value)}
+                />
+              </div>
+              <div className="col-span-3">
+                <select className={nativeSelectCls} value={row.category_id}
+                  onChange={e => setRow(i, 'category_id', e.target.value)}>
+                  <option value="">— category</option>
+                  {categories.filter(c => c.category_type === tx.tx_type).sort((a,b) => a.name.localeCompare(b.name)).map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <select className={nativeSelectCls} value={row.lending_loan_id}
+                  onChange={e => {
+                    setRow(i, 'lending_loan_id', e.target.value);
+                    if (e.target.value) {
+                      setRow(i, 'lending_tx_type', tx.tx_type === 'Expense' ? 'disbursement' : 'repayment');
+                    } else {
+                      setRow(i, 'lending_tx_type', '');
+                    }
+                  }}>
+                  <option value="">— loan</option>
+                  {loans.filter(l => l.status === 'active').map(l => (
+                    <option key={l.id} value={l.id}>{l.loan_name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-span-1 flex justify-center">
+                <button
+                  type="button"
+                  disabled={rows.length <= 2}
+                  onClick={() => removeRow(i)}
+                  className="text-slate-300 hover:text-red-500 disabled:opacity-20 disabled:cursor-not-allowed"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Add row */}
+        <button type="button" onClick={addRow}
+          className="text-xs text-blue-600 hover:text-blue-800 mt-2">
+          + Add split
+        </button>
+
+        {/* Remainder */}
+        <div className={`text-sm font-medium mt-3 ${balanced ? 'text-green-700' : 'text-red-600'}`}>
+          {balanced
+            ? '✓ Balanced'
+            : `${remainder > 0 ? `$${remainder.toFixed(2)} remaining` : `$${Math.abs(remainder).toFixed(2)} over`}`
+          }
+        </div>
+
+        {/* Actions */}
+        <div className="flex justify-between items-center pt-3 border-t border-slate-100 mt-3">
+          <div>
+            {tx.is_split_parent && (
+              <button type="button" onClick={handleRemove} disabled={removing}
+                className="text-xs text-red-500 hover:text-red-700">
+                {removing ? 'Removing…' : 'Remove split'}
+              </button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={onClose}
+              className="px-3 py-1.5 text-xs border border-slate-200 rounded-md hover:bg-slate-50">
+              Cancel
+            </button>
+            <button type="button" onClick={handleSave} disabled={!balanced || saving}
+              className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
+              {saving ? 'Saving…' : 'Save splits'}
+            </button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 const nativeSelectCls = 'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
 
@@ -73,6 +260,9 @@ export default function Transactions() {
   const [transferMatchBanner, setTransferMatchBanner] = useState(null);
   const [suggestion, setSuggestion] = useState(null);
   const [ruleSuggestion, setRuleSuggestion] = useState(null);
+
+  const [splitTx, setSplitTx] = useState(null);
+  const [expandedSplits, setExpandedSplits] = useState(new Set());
 
   useEffect(() => {
     const timer = setTimeout(() => setSearchDebounce(search), 300);
@@ -303,6 +493,17 @@ export default function Transactions() {
     }
     return map;
   }, [transactions]);
+
+  const handleSplitSaved = useCallback((updated) => {
+    setTransactions(prev => prev.map(t => t.id === updated.id ? updated : t));
+    refreshStats();
+  }, [refreshStats]);
+
+  const toggleSplitExpand = (id) => setExpandedSplits(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
 
   const getCategoryColour = (id) => categories.find(c => c.id === id)?.colour || '#94a3b8';
   const getAccountName = (id) => {
@@ -564,6 +765,7 @@ export default function Transactions() {
                     {transactions.map((tx) => {
                       const isPaired = transferPairs.has(tx.id);
                       return (
+                        <>
                         <TableRow key={tx.id} className={cn(
                           isPaired ? 'border-teal-100 bg-teal-50/40 hover:bg-teal-50' : 'border-slate-50',
                         )}>
@@ -577,101 +779,151 @@ export default function Transactions() {
                             {tx.balance != null ? formatAmount(tx.balance) : '—'}
                           </TableCell>
                           <TableCell>
-                            {editingCategoryTxId === tx.id ? (
-                              <div ref={selectRef} className="flex items-center gap-1 flex-wrap">
-                                <select
-                                  autoFocus={!awaitingTransferAccount}
-                                  value={pendingCategoryId ?? tx.category_id ?? ''}
-                                  onChange={e => handleCategorySelect(tx.id, e.target.value)}
-                                  className="px-2 py-1 border border-blue-400 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-40"
+                            <div className="flex items-center gap-2">
+                              {/* Scissors button — shown on all top-level rows */}
+                              {!tx.parent_transaction_id && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setSplitTx(tx); }}
+                                  className="text-slate-300 hover:text-blue-500 flex-shrink-0"
+                                  title="Split transaction"
                                 >
-                                  <CategoryOptions
-                                    categories={[...categories]
-                                      .filter(c => c.category_type === tx.tx_type)
-                                      .sort((a, b) => a.name.localeCompare(b.name))}
-                                    includeEmpty
-                                  />
-                                </select>
-                                {awaitingTransferAccount && (
-                                  <>
-                                    <ArrowRight size={12} className="text-slate-400 flex-shrink-0" />
-                                    <select
-                                      autoFocus
-                                      value={pendingLoanId ? `loan_${pendingLoanId}` : pendingTransferAccountId}
-                                      onChange={e => {
-                                        const val = e.target.value;
-                                        if (val.startsWith('loan_')) {
-                                          setPendingLoanId(parseInt(val.replace('loan_', '')));
-                                          setPendingTransferAccountId('');
-                                        } else {
-                                          setPendingTransferAccountId(val);
-                                          setPendingLoanId(null);
-                                        }
-                                      }}
-                                      className="px-2 py-1 border border-blue-400 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-32"
-                                    >
-                                      <option value="">— which account?</option>
-                                      <optgroup label="Accounts">
-                                        {accounts.filter(a => a.id !== tx.account_id).map(a => {
-                                          const last4 = a.account_number?.slice(-4);
-                                          const label = last4 ? `${a.account_name} (****${last4})` : a.account_name || a.account_number;
-                                          return <option key={a.id} value={a.id}>{label}</option>;
-                                        })}
-                                      </optgroup>
-                                      {loans.length > 0 && (
-                                        <optgroup label="Loans">
-                                          {loans.map(l => (
-                                            <option key={l.id} value={`loan_${l.id}`}>
-                                              {l.loan_name}{l.borrower_name ? ` (${l.borrower_name})` : ''}
-                                            </option>
-                                          ))}
+                                  <Scissors size={13} />
+                                </button>
+                              )}
+                              {editingCategoryTxId === tx.id ? (
+                                <div ref={selectRef} className="flex items-center gap-1 flex-wrap">
+                                  <select
+                                    autoFocus={!awaitingTransferAccount}
+                                    value={pendingCategoryId ?? tx.category_id ?? ''}
+                                    onChange={e => handleCategorySelect(tx.id, e.target.value)}
+                                    className="px-2 py-1 border border-blue-400 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-40"
+                                  >
+                                    <CategoryOptions
+                                      categories={[...categories]
+                                        .filter(c => c.category_type === tx.tx_type)
+                                        .sort((a, b) => a.name.localeCompare(b.name))}
+                                      includeEmpty
+                                    />
+                                  </select>
+                                  {awaitingTransferAccount && (
+                                    <>
+                                      <ArrowRight size={12} className="text-slate-400 flex-shrink-0" />
+                                      <select
+                                        autoFocus
+                                        value={pendingLoanId ? `loan_${pendingLoanId}` : pendingTransferAccountId}
+                                        onChange={e => {
+                                          const val = e.target.value;
+                                          if (val.startsWith('loan_')) {
+                                            setPendingLoanId(parseInt(val.replace('loan_', '')));
+                                            setPendingTransferAccountId('');
+                                          } else {
+                                            setPendingTransferAccountId(val);
+                                            setPendingLoanId(null);
+                                          }
+                                        }}
+                                        className="px-2 py-1 border border-blue-400 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-32"
+                                      >
+                                        <option value="">— which account?</option>
+                                        <optgroup label="Accounts">
+                                          {accounts.filter(a => a.id !== tx.account_id).map(a => {
+                                            const last4 = a.account_number?.slice(-4);
+                                            const label = last4 ? `${a.account_name} (****${last4})` : a.account_name || a.account_number;
+                                            return <option key={a.id} value={a.id}>{label}</option>;
+                                          })}
                                         </optgroup>
+                                        {loans.length > 0 && (
+                                          <optgroup label="Loans">
+                                            {loans.map(l => (
+                                              <option key={l.id} value={`loan_${l.id}`}>
+                                                {l.loan_name}{l.borrower_name ? ` (${l.borrower_name})` : ''}
+                                              </option>
+                                            ))}
+                                          </optgroup>
+                                        )}
+                                      </select>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => saveCategoryChange(tx.id, pendingCategoryId, pendingTransferAccountId || null, pendingLoanId)}
+                                        className="h-6 w-6 text-green-600 hover:bg-green-50"
+                                      >
+                                        <Check size={13} />
+                                      </Button>
+                                    </>
+                                  )}
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    setEditingCategoryTxId(tx.id);
+                                    setPendingCategoryId(tx.category_id || null);
+                                    setPendingTransferAccountId(tx.transfer_account_id ? String(tx.transfer_account_id) : '');
+                                    setPendingLoanId(null);
+                                    setAwaitingTransferAccount(false);
+                                  }}
+                                  className="flex items-center gap-1.5 group"
+                                  title="Click to change category"
+                                >
+                                  {tx.is_categorised ? (
+                                    <>
+                                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: getCategoryColour(tx.category_id) }} />
+                                      <span className="text-xs text-slate-700 group-hover:text-blue-600 transition-colors">{tx.category_name}</span>
+                                      {tx.transfer_account_name && (
+                                        <span className="text-xs text-slate-500 ml-0.5">→ {tx.transfer_account_name}</span>
                                       )}
-                                    </select>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      onClick={() => saveCategoryChange(tx.id, pendingCategoryId, pendingTransferAccountId || null, pendingLoanId)}
-                                      className="h-6 w-6 text-green-600 hover:bg-green-50"
-                                    >
-                                      <Check size={13} />
-                                    </Button>
-                                  </>
-                                )}
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => {
-                                  setEditingCategoryTxId(tx.id);
-                                  setPendingCategoryId(tx.category_id || null);
-                                  setPendingTransferAccountId(tx.transfer_account_id ? String(tx.transfer_account_id) : '');
-                                  setPendingLoanId(null);
-                                  setAwaitingTransferAccount(false);
-                                }}
-                                className="flex items-center gap-1.5 group"
-                                title="Click to change category"
-                              >
-                                {tx.is_categorised ? (
-                                  <>
-                                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: getCategoryColour(tx.category_id) }} />
-                                    <span className="text-xs text-slate-700 group-hover:text-blue-600 transition-colors">{tx.category_name}</span>
-                                    {tx.transfer_account_name && (
-                                      <span className="text-xs text-slate-500 ml-0.5">→ {tx.transfer_account_name}</span>
-                                    )}
-                                    {tx.lending_loan_name && (
-                                      <span className="text-xs text-indigo-600 ml-0.5">→ {tx.lending_loan_name}</span>
-                                    )}
-                                    {isPaired && (
-                                      <Link2 size={11} className="text-teal-500 flex-shrink-0 ml-0.5" title="Matched transfer pair" />
-                                    )}
-                                  </>
-                                ) : (
-                                  <span className="text-xs text-slate-300 group-hover:text-blue-500 transition-colors italic">Uncategorised</span>
-                                )}
-                              </button>
-                            )}
+                                      {tx.lending_loan_name && (
+                                        <span className="text-xs text-indigo-600 ml-0.5">→ {tx.lending_loan_name}</span>
+                                      )}
+                                      {isPaired && (
+                                        <Link2 size={11} className="text-teal-500 flex-shrink-0 ml-0.5" title="Matched transfer pair" />
+                                      )}
+                                    </>
+                                  ) : (
+                                    <span className="text-xs text-slate-300 group-hover:text-blue-500 transition-colors italic">Uncategorised</span>
+                                  )}
+                                </button>
+                              )}
+                              {/* Split badge + expand toggle for parent rows */}
+                              {tx.is_split_parent && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); toggleSplitExpand(tx.id); }}
+                                  className="flex items-center gap-0.5 text-xs text-indigo-500 ml-1 hover:text-indigo-700"
+                                  title="Show splits"
+                                >
+                                  <Scissors size={10} />
+                                  <span>{expandedSplits.has(tx.id) ? '▲' : '▼'}</span>
+                                </button>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
+                        {tx.is_split_parent && expandedSplits.has(tx.id) && tx.splits && tx.splits.map(child => (
+                          <TableRow key={`split-${child.id}`} className="bg-indigo-50/40 border-indigo-100">
+                            <TableCell className="text-slate-400 whitespace-nowrap pl-8 text-xs">↳</TableCell>
+                            <TableCell className="text-slate-600 max-w-xs truncate text-xs pl-2" title={child.tx_desc}>{child.tx_desc}</TableCell>
+                            <TableCell className="hidden md:table-cell text-slate-400 text-xs"></TableCell>
+                            <TableCell className={cn('text-right font-medium whitespace-nowrap text-xs', child.tx_type === 'Income' ? 'text-green-600' : 'text-slate-700')}>
+                              {child.tx_type === 'Income' ? '+' : '-'}{formatAmount(child.tx_amount)}
+                            </TableCell>
+                            <TableCell className="hidden lg:table-cell"></TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1.5">
+                                {child.category_name && (
+                                  <>
+                                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: getCategoryColour(child.category_id) }} />
+                                    <span className="text-xs text-slate-600">{child.category_name}</span>
+                                  </>
+                                )}
+                                {child.lending_loan_name && (
+                                  <span className="text-xs text-indigo-600 ml-0.5">→ {child.lending_loan_name}</span>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                        </>
                       );
                     })}
                   </TableBody>
@@ -708,6 +960,16 @@ export default function Transactions() {
             </Card>
           )}
         </>
+      )}
+
+      {splitTx && (
+        <SplitDialog
+          tx={splitTx}
+          categories={categories}
+          loans={loans}
+          onClose={() => setSplitTx(null)}
+          onSaved={handleSplitSaved}
+        />
       )}
     </div>
   );
