@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { HandCoins, Plus, Pencil, Trash2, X, ChevronDown, ChevronUp, Calendar, AlertCircle, CheckCircle2 } from 'lucide-react';
 import {
   fetchLoans, fetchPortfolioSummary, createLoan, updateLoan, deleteLoan,
   fetchSchedule, fetchLoanTransactions,
 } from '../api/lending';
 import { fetchAssets } from '../api/assets';
+import { fetchTransactions, patchTransaction } from '../api/transactions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -30,6 +31,33 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+
+function solveInterestRate(principal, monthlyPayment, termMonths, repaymentType) {
+  if (!principal || !monthlyPayment || principal <= 0 || monthlyPayment <= 0) return null;
+  if (repaymentType === 'interest_only') {
+    // interest_only: M = P * r  →  r = M/P  →  annual = r*12*100
+    const monthlyRate = monthlyPayment / principal;
+    return monthlyRate * 12 * 100;
+  }
+  if (!termMonths || termMonths <= 0) return null;
+  // P&I: Newton-Raphson on f(r) = P*r/(1-(1+r)^-n) - M = 0
+  let r = 0.05 / 12; // 5% p.a. initial guess
+  for (let i = 0; i < 300; i++) {
+    const pow = Math.pow(1 + r, -termMonths);
+    const denom = 1 - pow;
+    if (denom <= 0) return null;
+    const f = (principal * r) / denom - monthlyPayment;
+    const dpow = -termMonths * Math.pow(1 + r, -termMonths - 1);
+    const df = principal * (denom - r * dpow) / (denom * denom);
+    if (Math.abs(df) < 1e-15) break;
+    const rNew = r - f / df;
+    if (!isFinite(rNew) || rNew <= 0) return null;
+    if (Math.abs(rNew - r) < 1e-10) { r = rNew; break; }
+    r = rNew;
+  }
+  if (r <= 0 || !isFinite(r)) return null;
+  return r * 12 * 100;
+}
 
 const AUD = (v) => v == null ? '—' : new Intl.NumberFormat('en-AU', {
   style: 'currency', currency: 'AUD', maximumFractionDigits: 0,
@@ -64,6 +92,7 @@ const BLANK_FORM = {
   principal: '',
   interest_rate: '',
   start_date: '',
+  first_payment_date: '',
   repayment_type: 'principal_and_interest',
   term_months: '',
   open_ended: false,
@@ -71,6 +100,14 @@ const BLANK_FORM = {
   notes: '',
   asset_id: '',
   ownership_pct: '',
+  // Rate input mode
+  rate_mode: 'rate', // 'rate' | 'payment'
+  monthly_payment_input: '',
+  // Disbursement
+  disbursement_mode: 'skip', // 'skip' | 'link' | 'manual'
+  disbursement_tx_id: null,
+  disbursement_date: '',
+  disbursement_amount: '',
 };
 
 const nativeSelectCls = 'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
@@ -91,6 +128,8 @@ function LoanForm({ initial, assets, onSave, onCancel, saving }) {
   const [form, setForm] = useState(() => {
     if (!initial) return BLANK_FORM;
     const startDate = initial.start_date ? new Date(initial.start_date).toISOString().split('T')[0] : '';
+    const firstPayDate = initial.first_payment_date ? new Date(initial.first_payment_date).toISOString().split('T')[0] : '';
+    const manualDate = initial.manual_disbursement_date ? new Date(initial.manual_disbursement_date).toISOString().split('T')[0] : '';
     return {
       loan_name: initial.loan_name || '',
       loan_type: initial.loan_type || 'personal',
@@ -98,6 +137,7 @@ function LoanForm({ initial, assets, onSave, onCancel, saving }) {
       principal: initial.principal != null ? String(initial.principal) : '',
       interest_rate: initial.interest_rate != null ? String(initial.interest_rate) : '',
       start_date: startDate,
+      first_payment_date: firstPayDate,
       repayment_type: initial.repayment_type || 'principal_and_interest',
       term_months: initial.term_months != null ? String(initial.term_months) : '',
       open_ended: initial.term_months == null,
@@ -105,10 +145,43 @@ function LoanForm({ initial, assets, onSave, onCancel, saving }) {
       notes: initial.notes || '',
       asset_id: initial.asset_id != null ? String(initial.asset_id) : '',
       ownership_pct: initial.ownership_pct != null ? String(initial.ownership_pct) : '',
+      rate_mode: 'rate',
+      monthly_payment_input: '',
+      disbursement_mode: initial.manual_disbursement_amount ? 'manual' : 'skip',
+      disbursement_tx_id: null,
+      disbursement_date: manualDate,
+      disbursement_amount: initial.manual_disbursement_amount != null ? String(initial.manual_disbursement_amount) : '',
     };
   });
 
+  const [txSearch, setTxSearch] = useState('');
+  const [txList, setTxList] = useState([]);
+  const [txLoading, setTxLoading] = useState(false);
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // Load transactions when link mode is selected
+  useEffect(() => {
+    if (form.disbursement_mode !== 'link') return;
+    setTxLoading(true);
+    fetchTransactions({ tx_type: 'Expense', per_page: 200 })
+      .then(r => setTxList(r.items || []))
+      .catch(() => setTxList([]))
+      .finally(() => setTxLoading(false));
+  }, [form.disbursement_mode]);
+
+  // Derived interest rate from monthly payment input
+  const derivedRate = useMemo(() => {
+    if (form.rate_mode !== 'payment') return null;
+    const p = parseFloat(form.principal);
+    const m = parseFloat(form.monthly_payment_input);
+    const n = form.open_ended ? null : parseInt(form.term_months);
+    return solveInterestRate(p, m, n, form.repayment_type);
+  }, [form.rate_mode, form.principal, form.monthly_payment_input, form.term_months, form.open_ended, form.repayment_type]);
+
+  const filteredTxs = txList.filter(tx =>
+    !txSearch || tx.tx_desc?.toLowerCase().includes(txSearch.toLowerCase())
+  );
 
   const borrowerLabel = {
     personal: 'Borrower Name',
@@ -118,21 +191,34 @@ function LoanForm({ initial, assets, onSave, onCancel, saving }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    const rate = form.rate_mode === 'payment'
+      ? (derivedRate != null ? parseFloat(derivedRate.toFixed(4)) : null)
+      : parseFloat(form.interest_rate);
+    if (!rate || rate <= 0) {
+      alert('A valid interest rate is required. Check your monthly payment input.');
+      return;
+    }
     const payload = {
       loan_name: form.loan_name.trim(),
       loan_type: form.loan_type,
       borrower_name: form.borrower_name.trim() || null,
       principal: parseFloat(form.principal),
-      interest_rate: parseFloat(form.interest_rate),
+      interest_rate: rate,
       start_date: new Date(form.start_date).toISOString(),
+      first_payment_date: form.first_payment_date ? new Date(form.first_payment_date).toISOString() : null,
       repayment_type: form.repayment_type,
       term_months: form.open_ended ? null : (form.term_months ? parseInt(form.term_months) : null),
       status: form.status,
       notes: form.notes.trim() || null,
       asset_id: form.loan_type === 'property_share' && form.asset_id ? parseInt(form.asset_id) : null,
       ownership_pct: form.loan_type === 'property_share' && form.ownership_pct ? parseFloat(form.ownership_pct) : null,
+      manual_disbursement_date: form.disbursement_mode === 'manual' && form.disbursement_date
+        ? new Date(form.disbursement_date).toISOString() : null,
+      manual_disbursement_amount: form.disbursement_mode === 'manual' && form.disbursement_amount
+        ? parseFloat(form.disbursement_amount) : null,
     };
-    onSave(payload);
+    const disbursementTxId = form.disbursement_mode === 'link' ? form.disbursement_tx_id : null;
+    onSave(payload, disbursementTxId);
   };
 
   return (
@@ -162,14 +248,55 @@ function LoanForm({ initial, assets, onSave, onCancel, saving }) {
           <Input type="number" min="0.01" step="0.01" value={form.principal} onChange={e => set('principal', e.target.value)} required />
         </div>
 
+        {/* Rate / Payment toggle */}
         <div>
-          <Label className="text-xs font-medium text-slate-700 mb-1">Interest Rate (% p.a.) *</Label>
-          <Input type="number" min="0.01" step="0.01" value={form.interest_rate} onChange={e => set('interest_rate', e.target.value)} required />
+          <div className="flex items-center gap-3 mb-1">
+            <Label className="text-xs font-medium text-slate-700">
+              {form.rate_mode === 'rate' ? 'Interest Rate (% p.a.) *' : 'Monthly Payment ($) *'}
+            </Label>
+            <button
+              type="button"
+              onClick={() => set('rate_mode', form.rate_mode === 'rate' ? 'payment' : 'rate')}
+              className="text-xs text-blue-600 hover:text-blue-800 underline"
+            >
+              {form.rate_mode === 'rate' ? 'Enter payment instead' : 'Enter rate instead'}
+            </button>
+          </div>
+          {form.rate_mode === 'rate' ? (
+            <Input
+              type="number" min="0.01" step="0.01"
+              value={form.interest_rate}
+              onChange={e => set('interest_rate', e.target.value)}
+              required
+            />
+          ) : (
+            <div>
+              <Input
+                type="number" min="0.01" step="0.01"
+                value={form.monthly_payment_input}
+                onChange={e => set('monthly_payment_input', e.target.value)}
+                placeholder="e.g. 500.00"
+                required
+              />
+              <p className="text-xs mt-1 text-slate-500">
+                {derivedRate != null
+                  ? <span className="text-green-700 font-medium">≈ {derivedRate.toFixed(2)}% p.a.</span>
+                  : <span className="text-amber-600">Fill in principal and term first</span>
+                }
+              </p>
+            </div>
+          )}
         </div>
 
         <div>
           <Label className="text-xs font-medium text-slate-700 mb-1">Start Date *</Label>
           <Input type="date" value={form.start_date} onChange={e => set('start_date', e.target.value)} required />
+        </div>
+
+        <div>
+          <Label className="text-xs font-medium text-slate-700 mb-1">First Payment Date</Label>
+          <Input type="date" value={form.first_payment_date} onChange={e => set('first_payment_date', e.target.value)} />
+          <p className="text-xs text-slate-400 mt-0.5">Leave blank to default to one month after start date</p>
         </div>
 
         <div>
@@ -222,6 +349,85 @@ function LoanForm({ initial, assets, onSave, onCancel, saving }) {
             value={form.notes}
             onChange={e => set('notes', e.target.value)}
           />
+        </div>
+
+        {/* Disbursement section */}
+        <div className="col-span-2 border-t border-slate-100 pt-3">
+          <Label className="text-xs font-medium text-slate-700 mb-2 block">Disbursement</Label>
+          <div className="flex gap-4 mb-3">
+            {[
+              { value: 'skip', label: 'Skip for now' },
+              { value: 'link', label: 'Link bank transaction' },
+              { value: 'manual', label: 'Enter manually' },
+            ].map(opt => (
+              <label key={opt.value} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  name="disbursement_mode"
+                  value={opt.value}
+                  checked={form.disbursement_mode === opt.value}
+                  onChange={() => set('disbursement_mode', opt.value)}
+                  className="text-blue-600"
+                />
+                {opt.label}
+              </label>
+            ))}
+          </div>
+
+          {form.disbursement_mode === 'link' && (
+            <div className="space-y-2">
+              <Input
+                placeholder="Search transactions…"
+                value={txSearch}
+                onChange={e => setTxSearch(e.target.value)}
+                className="text-xs"
+              />
+              {txLoading ? (
+                <p className="text-xs text-slate-400">Loading transactions…</p>
+              ) : (
+                <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-md divide-y divide-slate-100">
+                  {filteredTxs.length === 0 && (
+                    <p className="text-xs text-slate-400 p-3">No transactions found</p>
+                  )}
+                  {filteredTxs.map(tx => (
+                    <button
+                      key={tx.id}
+                      type="button"
+                      onClick={() => set('disbursement_tx_id', tx.id)}
+                      className={cn(
+                        'w-full text-left px-3 py-2 text-xs hover:bg-blue-50 transition-colors',
+                        form.disbursement_tx_id === tx.id && 'bg-blue-50 font-medium text-blue-700'
+                      )}
+                    >
+                      <span className="text-slate-400 mr-2">
+                        {tx.tx_date ? new Date(tx.tx_date).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                      </span>
+                      <span className="text-slate-700">{tx.tx_desc}</span>
+                      <span className="float-right text-slate-600">${Math.abs(tx.tx_amount).toFixed(2)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {form.disbursement_tx_id && (
+                <p className="text-xs text-green-700">
+                  Transaction selected — will be linked as disbursement after saving.
+                </p>
+              )}
+            </div>
+          )}
+
+          {form.disbursement_mode === 'manual' && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-medium text-slate-700 mb-1">Disbursement Date</Label>
+                <Input type="date" value={form.disbursement_date} onChange={e => set('disbursement_date', e.target.value)} />
+              </div>
+              <div>
+                <Label className="text-xs font-medium text-slate-700 mb-1">Amount ($)</Label>
+                <Input type="number" min="0.01" step="0.01" value={form.disbursement_amount} onChange={e => set('disbursement_amount', e.target.value)} />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -284,12 +490,49 @@ function ScheduleTable({ rows }) {
   );
 }
 
-function LoanCard({ loan, expanded, onToggleSchedule, onEdit, onDelete }) {
+function LoanCard({ loan, expanded, onToggleSchedule, onEdit, onDelete, onRefresh }) {
   const typeMeta = TYPE_META[loan.loan_type] || TYPE_META.personal;
   const statusMeta = STATUS_META[loan.status] || STATUS_META.active;
   const [schedule, setSchedule] = useState(null);
   const [loadingSchedule, setLoadingSchedule] = useState(false);
   const [scheduleError, setScheduleError] = useState(null);
+
+  const [showDisbDialog, setShowDisbDialog] = useState(false);
+  const [disbMode, setDisbMode] = useState('link');
+  const [disbTxSearch, setDisbTxSearch] = useState('');
+  const [disbTxList, setDisbTxList] = useState([]);
+  const [disbTxId, setDisbTxId] = useState(null);
+  const [disbDate, setDisbDate] = useState('');
+  const [disbAmount, setDisbAmount] = useState('');
+  const [disbSaving, setDisbSaving] = useState(false);
+
+  const openDisbDialog = async () => {
+    setShowDisbDialog(true);
+    try {
+      const r = await fetchTransactions({ tx_type: 'Expense', per_page: 200 });
+      setDisbTxList(r.items || []);
+    } catch { setDisbTxList([]); }
+  };
+
+  const saveDisbursement = async () => {
+    setDisbSaving(true);
+    try {
+      if (disbMode === 'link' && disbTxId) {
+        await patchTransaction(disbTxId, { lending_loan_id: loan.id, lending_tx_type: 'disbursement' });
+      } else if (disbMode === 'manual' && disbAmount) {
+        await updateLoan(loan.id, {
+          manual_disbursement_date: disbDate ? new Date(disbDate).toISOString() : null,
+          manual_disbursement_amount: parseFloat(disbAmount),
+        });
+      }
+      setShowDisbDialog(false);
+      if (onRefresh) onRefresh();
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Failed to save disbursement');
+    } finally {
+      setDisbSaving(false);
+    }
+  };
 
   const handleViewSchedule = async () => {
     if (expanded) { onToggleSchedule(loan.id); return; }
@@ -375,6 +618,12 @@ function LoanCard({ loan, expanded, onToggleSchedule, onEdit, onDelete }) {
             </>
           )}
         </Button>
+        {!loan.disbursed_amount && (
+          <Button variant="ghost" size="sm" onClick={openDisbDialog}
+            className="text-xs font-medium text-slate-500 hover:text-blue-600 h-auto p-0 ml-4">
+            Record Disbursement
+          </Button>
+        )}
         {scheduleError && <p className="text-xs text-red-500 mt-1">{scheduleError}</p>}
 
         {expanded && (
@@ -386,6 +635,55 @@ function LoanCard({ loan, expanded, onToggleSchedule, onEdit, onDelete }) {
             ) : schedule ? (
               <ScheduleTable rows={schedule} />
             ) : null}
+          </div>
+        )}
+
+        {showDisbDialog && (
+          <div className="mt-4 border-t border-slate-100 pt-3 space-y-3">
+            <div className="flex justify-between items-center">
+              <p className="text-sm font-medium text-slate-700">Record Disbursement</p>
+              <Button variant="ghost" size="icon" onClick={() => setShowDisbDialog(false)} className="h-6 w-6">
+                <X size={13} />
+              </Button>
+            </div>
+            <div className="flex gap-4">
+              {[{ value: 'link', label: 'Link bank transaction' }, { value: 'manual', label: 'Enter manually' }].map(opt => (
+                <label key={opt.value} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                  <input type="radio" name={`disb_${loan.id}`} value={opt.value} checked={disbMode === opt.value} onChange={() => setDisbMode(opt.value)} />
+                  {opt.label}
+                </label>
+              ))}
+            </div>
+            {disbMode === 'link' && (
+              <div className="space-y-2">
+                <Input placeholder="Search…" value={disbTxSearch} onChange={e => setDisbTxSearch(e.target.value)} className="text-xs h-8" />
+                <div className="max-h-40 overflow-y-auto border border-slate-200 rounded divide-y divide-slate-100">
+                  {disbTxList.filter(tx => !disbTxSearch || tx.tx_desc?.toLowerCase().includes(disbTxSearch.toLowerCase())).map(tx => (
+                    <button key={tx.id} type="button" onClick={() => setDisbTxId(tx.id)}
+                      className={cn('w-full text-left px-2 py-1.5 text-xs hover:bg-blue-50', disbTxId === tx.id && 'bg-blue-50 text-blue-700 font-medium')}>
+                      <span className="text-slate-400 mr-2">{tx.tx_date ? new Date(tx.tx_date).toLocaleDateString('en-AU') : ''}</span>
+                      {tx.tx_desc}
+                      <span className="float-right">${Math.abs(tx.tx_amount).toFixed(2)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {disbMode === 'manual' && (
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs mb-0.5">Date</Label>
+                  <Input type="date" value={disbDate} onChange={e => setDisbDate(e.target.value)} className="h-8 text-xs" />
+                </div>
+                <div>
+                  <Label className="text-xs mb-0.5">Amount ($)</Label>
+                  <Input type="number" min="0.01" step="0.01" value={disbAmount} onChange={e => setDisbAmount(e.target.value)} className="h-8 text-xs" />
+                </div>
+              </div>
+            )}
+            <Button size="sm" onClick={saveDisbursement} disabled={disbSaving} className="w-full">
+              {disbSaving ? 'Saving…' : 'Save Disbursement'}
+            </Button>
           </div>
         )}
       </CardContent>
@@ -427,13 +725,20 @@ export default function Lending() {
 
   const handleToggleSchedule = (id) => setExpandedId(prev => prev === id ? null : id);
 
-  const handleSave = async (payload) => {
+  const handleSave = async (payload, disbursementTxId) => {
     setSaving(true);
     try {
+      let loan;
       if (editingLoan) {
-        await updateLoan(editingLoan.id, payload);
+        loan = await updateLoan(editingLoan.id, payload);
       } else {
-        await createLoan(payload);
+        loan = await createLoan(payload);
+      }
+      if (disbursementTxId) {
+        await patchTransaction(disbursementTxId, {
+          lending_loan_id: loan.id,
+          lending_tx_type: 'disbursement',
+        });
       }
       setShowForm(false);
       setEditingLoan(null);
@@ -518,6 +823,7 @@ export default function Lending() {
               onToggleSchedule={handleToggleSchedule}
               onEdit={() => { setEditingLoan(loan); setShowForm(true); }}
               onDelete={() => setDeleteTarget(loan)}
+              onRefresh={load}
             />
           ))}
         </div>
