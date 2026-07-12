@@ -577,3 +577,92 @@ async def test_portfolio_summary_weighted_avg_rate(client: AsyncClient):
     assert r.status_code == 200
     data = r.json()
     assert abs(data["weighted_avg_rate"] - 7.2) < 0.01
+
+
+# ── New fields: first_payment_date, manual disbursement ────────
+
+@pytest.mark.anyio
+async def test_create_loan_with_first_payment_date(client: AsyncClient):
+    r = await client.post("/lending", json={
+        "loan_name": "FPD Loan",
+        "principal": 10000,
+        "interest_rate": 5.0,
+        "start_date": "2025-01-01T00:00:00",
+        "term_months": 12,
+        "first_payment_date": "2025-03-01T00:00:00",
+    })
+    assert r.status_code == 201
+    data = r.json()
+    assert data["first_payment_date"] is not None
+    assert "2025-03-01" in data["first_payment_date"]
+
+
+@pytest.mark.anyio
+async def test_schedule_uses_first_payment_date_as_anchor(client: AsyncClient):
+    r = await client.post("/lending", json={
+        "loan_name": "Anchor Loan",
+        "principal": 10000,
+        "interest_rate": 5.0,
+        "start_date": "2025-01-01T00:00:00",
+        "term_months": 3,
+        "first_payment_date": "2025-03-01T00:00:00",
+    })
+    assert r.status_code == 201
+    loan_id = r.json()["id"]
+
+    sched = await client.get(f"/lending/{loan_id}/schedule")
+    assert sched.status_code == 200
+    rows = sched.json()
+    assert len(rows) == 3
+    assert rows[0]["payment_date"] == "2025-03-01"
+    assert rows[1]["payment_date"] == "2025-04-01"
+    assert rows[2]["payment_date"] == "2025-05-01"
+
+
+@pytest.mark.anyio
+async def test_schedule_default_anchor_without_first_payment_date(client: AsyncClient):
+    r = await client.post("/lending", json={
+        "loan_name": "Default Anchor Loan",
+        "principal": 10000,
+        "interest_rate": 5.0,
+        "start_date": "2025-01-01T00:00:00",
+        "term_months": 2,
+    })
+    loan_id = r.json()["id"]
+    sched = await client.get(f"/lending/{loan_id}/schedule")
+    rows = sched.json()
+    # Default: start_date + 1 month for period 1
+    assert rows[0]["payment_date"] == "2025-02-01"
+    assert rows[1]["payment_date"] == "2025-03-01"
+
+
+@pytest.mark.anyio
+async def test_manual_disbursement_amount_shown_in_response(client: AsyncClient):
+    r = await client.post("/lending", json={
+        "loan_name": "Manual Disb Loan",
+        "principal": 5000,
+        "interest_rate": 6.0,
+        "start_date": "2025-01-01T00:00:00",
+        "manual_disbursement_date": "2025-01-05T00:00:00",
+        "manual_disbursement_amount": 5000,
+    })
+    assert r.status_code == 201
+    data = r.json()
+    assert data["disbursed_amount"] == 5000.0
+    assert data["manual_disbursement_amount"] == 5000.0
+    assert data["manual_disbursement_date"] is not None
+
+
+@pytest.mark.anyio
+async def test_create_loan_new_fields_null_by_default(client: AsyncClient):
+    r = await client.post("/lending", json={
+        "loan_name": "Minimal Loan",
+        "principal": 1000,
+        "interest_rate": 3.0,
+        "start_date": "2025-06-01T00:00:00",
+    })
+    assert r.status_code == 201
+    data = r.json()
+    assert data["first_payment_date"] is None
+    assert data["manual_disbursement_date"] is None
+    assert data["manual_disbursement_amount"] is None
