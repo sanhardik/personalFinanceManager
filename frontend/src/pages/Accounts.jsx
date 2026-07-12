@@ -29,6 +29,7 @@ const TYPE_CONFIG = {
   bank: { label: 'Bank Account', icon: Building2, colour: 'bg-blue-100 text-blue-700' },
   credit_card: { label: 'Credit Card', icon: CreditCard, colour: 'bg-purple-100 text-purple-700' },
   home_loan: { label: 'Home Loan', icon: Home, colour: 'bg-orange-100 text-orange-700' },
+  personal_loan: { label: 'Personal Loan', icon: CreditCard, colour: 'bg-indigo-100 text-indigo-700' },
 };
 
 const BLANK_FORM = {
@@ -36,6 +37,7 @@ const BLANK_FORM = {
   account_type: 'bank', bsb: '', linked_account_id: '',
   loan_interest_rate: '', loan_term_years: '', loan_repayment_type: '',
   loan_original_amount: '', loan_start_date: '', asset_id: '',
+  lender_name: '', loan_notes: '', payment_frequency: '',
 };
 
 const nativeSelectCls = 'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
@@ -71,6 +73,39 @@ function LoanFields({ data, onChange }) {
         <Label className="block text-xs text-slate-500 mb-1">Original Loan Amount</Label>
         <Input type="number" step="1" min="0" placeholder="e.g. 574700"
           value={data.loan_original_amount} onChange={e => set('loan_original_amount', e.target.value)} />
+      </div>
+    </div>
+  );
+}
+
+function PersonalLoanExtraFields({ data, onChange }) {
+  const set = (k, v) => onChange({ ...data, [k]: v });
+  return (
+    <div className="col-span-full grid grid-cols-2 gap-3 pt-3 border-t border-indigo-100 mt-1">
+      <p className="col-span-full text-xs font-semibold text-indigo-700 uppercase tracking-wide">Personal Loan Details</p>
+      <div>
+        <Label className="block text-xs text-slate-500 mb-1">Lender Name</Label>
+        <Input type="text" placeholder="e.g. CommBank" value={data.lender_name}
+          onChange={e => set('lender_name', e.target.value)} />
+      </div>
+      <div>
+        <Label className="block text-xs text-slate-500 mb-1">Payment Frequency</Label>
+        <select value={data.payment_frequency} onChange={e => set('payment_frequency', e.target.value)} className={nativeSelectCls}>
+          <option value="">— select —</option>
+          <option value="monthly">Monthly</option>
+          <option value="fortnightly">Fortnightly</option>
+          <option value="weekly">Weekly</option>
+        </select>
+      </div>
+      <div className="col-span-full">
+        <Label className="block text-xs text-slate-500 mb-1">Notes</Label>
+        <textarea
+          className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+          rows={2}
+          placeholder="e.g. Car purchase loan — refinancing in 2027"
+          value={data.loan_notes}
+          onChange={e => set('loan_notes', e.target.value)}
+        />
       </div>
     </div>
   );
@@ -131,6 +166,9 @@ export default function Accounts() {
     loan_original_amount: data.loan_original_amount ? parseFloat(data.loan_original_amount) : null,
     loan_repayment_type: data.loan_repayment_type || null,
     loan_start_date: data.loan_start_date || null,
+    lender_name: data.lender_name || null,
+    loan_notes: data.loan_notes || null,
+    payment_frequency: data.payment_frequency || null,
   });
 
   const handleCreate = async (e) => {
@@ -162,6 +200,9 @@ export default function Accounts() {
       loan_repayment_type: acc.loan_repayment_type || '',
       loan_original_amount: acc.loan_original_amount ?? '',
       loan_start_date: acc.loan_start_date ? acc.loan_start_date.slice(0, 10) : '',
+      lender_name: acc.lender_name || '',
+      loan_notes: acc.loan_notes || '',
+      payment_frequency: acc.payment_frequency || '',
     });
   };
 
@@ -247,6 +288,7 @@ export default function Accounts() {
                     <option value="bank">Bank Account</option>
                     <option value="credit_card">Credit Card</option>
                     <option value="home_loan">Home Loan</option>
+                    <option value="personal_loan">Personal Loan</option>
                   </select>
                 </div>
                 <div>
@@ -267,6 +309,12 @@ export default function Accounts() {
                         {assets.map(a => <option key={a.id} value={a.id}>{a.asset_name} ({a.asset_type})</option>)}
                       </select>
                     </div>
+                  </>
+                )}
+                {form.account_type === 'personal_loan' && (
+                  <>
+                    <LoanFields data={form} onChange={setForm} />
+                    <PersonalLoanExtraFields data={form} onChange={setForm} />
                   </>
                 )}
 
@@ -337,6 +385,7 @@ export default function Accounts() {
                           <option value="bank">Bank Account</option>
                           <option value="credit_card">Credit Card</option>
                           <option value="home_loan">Home Loan</option>
+                          <option value="personal_loan">Personal Loan</option>
                         </select>
                         <select value={editData.linked_account_id}
                           onChange={e => setEditData({...editData, linked_account_id: e.target.value})}
@@ -382,6 +431,13 @@ export default function Accounts() {
                               {assets.map(a => <option key={a.id} value={a.id}>{a.asset_name}</option>)}
                             </select>
                           </div>
+                        )}
+
+                        {editData.account_type === 'personal_loan' && (
+                          <>
+                            <LoanFields data={editData} onChange={setEditData} />
+                            <PersonalLoanExtraFields data={editData} onChange={setEditData} />
+                          </>
                         )}
 
                         <div className="flex gap-1 pt-1">
