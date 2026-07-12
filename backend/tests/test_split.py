@@ -77,29 +77,28 @@ async def _insert_tx(
 
 @pytest.mark.anyio
 async def test_split_creates_children(client: AsyncClient, db_session):
-    """POST /transactions/{id}/split creates 3 child transactions visible in GET /transactions."""
+    """POST /transactions/{id}/split creates 3 child transactions nested in the response."""
     acc_id = await _make_account(client, _next_suffix())
     tx_id = await _insert_tx(db_session, client, acc_id, amount=1000.0)
 
     r = await client.post(f"/transactions/{tx_id}/split", json={"splits": [
-        {"description": "Loan A repayment", "amount": 500.0},
-        {"description": "Loan B repayment", "amount": 300.0},
-        {"description": "Loan C repayment", "amount": 200.0},
+        {"description": "Loan A repayment", "amount": 500.0, "lending_loan_id": None},
+        {"description": "Loan B repayment", "amount": 300.0, "lending_loan_id": None},
+        {"description": "Loan C repayment", "amount": 200.0, "lending_loan_id": None},
     ]})
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["is_split_parent"] is True
-
-    # Verify children appear in transaction list
-    r2 = await client.get("/transactions", params={"account_id": acc_id})
-    items = r2.json()["items"]
-    amounts = sorted(t["tx_amount"] for t in items)
+    # Splits should be nested in the POST response
+    assert data["splits"] is not None
+    assert len(data["splits"]) == 3
+    amounts = sorted(s["tx_amount"] for s in data["splits"])
     assert amounts == [200.0, 300.0, 500.0]
 
 
 @pytest.mark.anyio
 async def test_split_sets_descriptions(client: AsyncClient, db_session):
-    """Children carry the descriptions provided in each split item."""
+    """Children carry the descriptions provided in each split item (nested in POST response)."""
     acc_id = await _make_account(client, _next_suffix())
     tx_id = await _insert_tx(db_session, client, acc_id, amount=600.0, desc="Bulk payment")
 
@@ -108,17 +107,17 @@ async def test_split_sets_descriptions(client: AsyncClient, db_session):
         {"description": "Bob share", "amount": 200.0},
     ]})
     assert r.status_code == 200, r.text
-
-    r2 = await client.get("/transactions", params={"account_id": acc_id})
-    descs = {t["tx_desc"] for t in r2.json()["items"]}
+    data = r.json()
+    assert data["splits"] is not None
+    descs = {s["tx_desc"] for s in data["splits"]}
     assert descs == {"Alice share", "Bob share"}
 
 
 # ── List / Dashboard exclusion ────────────────────────────────
 
 @pytest.mark.anyio
-async def test_split_parent_excluded_from_list(client: AsyncClient, db_session):
-    """GET /transactions must not return the split parent; only children appear."""
+async def test_split_parent_in_list_children_excluded(client: AsyncClient, db_session):
+    """Parent appears in top-level list; children are sub-rows not in top-level list."""
     acc_id = await _make_account(client, _next_suffix())
     tx_id = await _insert_tx(db_session, client, acc_id, amount=800.0, desc="Big payment")
 
@@ -130,8 +129,13 @@ async def test_split_parent_excluded_from_list(client: AsyncClient, db_session):
     r = await client.get("/transactions", params={"account_id": acc_id})
     items = r.json()["items"]
     ids = [t["id"] for t in items]
-    assert tx_id not in ids          # parent excluded
-    assert len(ids) == 2             # exactly the two children
+    assert tx_id in ids        # parent IS in list
+    assert len(ids) == 1       # children NOT in top-level list
+    # Parent row has is_split_parent=True and nested splits
+    parent_row = next(t for t in items if t["id"] == tx_id)
+    assert parent_row["is_split_parent"] is True
+    assert parent_row["splits"] is not None
+    assert len(parent_row["splits"]) == 2
 
 
 @pytest.mark.anyio
@@ -200,9 +204,9 @@ async def test_split_rejects_child_transaction(client: AsyncClient, db_session):
     ]})
     assert r.status_code == 200, r.text
 
-    # Find child via GET /transactions list
-    r2 = await client.get("/transactions", params={"account_id": acc_id})
-    child_id = r2.json()["items"][0]["id"]
+    # Find child id from the nested splits in the POST response
+    # (children are excluded from the top-level GET /transactions list)
+    child_id = r.json()["splits"][0]["id"]
 
     r3 = await client.post(f"/transactions/{child_id}/split", json={"splits": [
         {"description": "X", "amount": 400.0},
@@ -276,10 +280,10 @@ async def test_resplit_replaces_children(client: AsyncClient, db_session):
         {"description": "New C", "amount": 300.0},
     ]})
     assert r.status_code == 200, r.text
-
-    r2 = await client.get("/transactions", params={"account_id": acc_id})
-    items = r2.json()["items"]
-    descs = {t["tx_desc"] for t in items}
-    assert len(items) == 3
+    data = r.json()
+    # Check nested splits in POST response (children excluded from top-level GET list)
+    assert data["splits"] is not None
+    descs = {s["tx_desc"] for s in data["splits"]}
+    assert len(data["splits"]) == 3
     assert "First A" not in descs
     assert "New A" in descs

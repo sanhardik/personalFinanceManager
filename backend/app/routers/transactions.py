@@ -38,9 +38,12 @@ def _tx_to_response(tx: Transaction) -> dict:
     data["lending_loan_name"] = tx.lending_loan.loan_name if tx.lending_loan else None
     data["is_split_parent"] = tx.is_split_parent
     data["parent_transaction_id"] = tx.parent_transaction_id
-    # Nested splits — only if eagerly loaded and non-empty
-    if tx.is_split_parent and hasattr(tx, "splits") and tx.splits:
-        data["splits"] = [_tx_to_response(s) for s in tx.splits]
+    # Nested splits — access via __dict__ to avoid triggering lazy loading
+    # (which raises MissingGreenlet in async context). selectinload populates
+    # the key in __dict__ as an InstrumentedList; non-loaded rels are absent.
+    raw_splits = tx.__dict__.get("splits")
+    if raw_splits is not None and len(raw_splits) > 0:
+        data["splits"] = [_tx_to_response(s) for s in raw_splits]
     else:
         data["splits"] = None
     return data
@@ -67,11 +70,16 @@ async def list_transactions(
         selectinload(Transaction.category),
         selectinload(Transaction.transfer_account),
         selectinload(Transaction.lending_loan),
+        selectinload(Transaction.splits).options(
+            selectinload(Transaction.category),
+            selectinload(Transaction.transfer_account),
+            selectinload(Transaction.lending_loan),
+        ),
     )
     count_stmt = select(func.count(Transaction.id))
 
-    stmt = stmt.where(Transaction.is_split_parent == False)
-    count_stmt = count_stmt.where(Transaction.is_split_parent == False)
+    stmt = stmt.where(Transaction.parent_transaction_id.is_(None))
+    count_stmt = count_stmt.where(Transaction.parent_transaction_id.is_(None))
 
     if account_id:
         stmt = stmt.where(Transaction.account_id == account_id)
@@ -546,6 +554,11 @@ async def split_transaction(
         db.add(child)
 
     await db.commit()
+
+    # Expire the cached 'splits' relationship on the parent object so that the
+    # subsequent selectinload query fetches fresh data from the DB (not the
+    # identity-map cache which was populated with [] before children existed).
+    db.expire(tx, ["splits", "category", "transfer_account", "lending_loan"])
 
     # Reload with children
     result = await db.execute(
