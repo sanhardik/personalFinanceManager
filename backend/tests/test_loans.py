@@ -320,3 +320,117 @@ async def test_personal_loan_balance_from_payments(client: AsyncClient):
     assert data["account_type"] == "personal_loan"
     assert data["current_balance"] == 10000.0
     assert data["percent_paid"] == 0.0
+
+
+# ── Personal loan tests ────────────────────────────────────────
+
+@pytest.mark.anyio
+async def test_list_loans_includes_both_types(client: AsyncClient):
+    """GET /loans returns both home_loan and personal_loan accounts."""
+    await _upload_loan(client)  # creates a home_loan account
+    await client.post("/accounts", json={
+        "account_number": "PL-LIST-001",
+        "account_name": "Personal Loan Test",
+        "bank_name": "ANZ",
+        "account_type": "personal_loan",
+        "loan_original_amount": 5000.0,
+    })
+    r = await client.get("/loans")
+    assert r.status_code == 200
+    types = {l["account_type"] for l in r.json()}
+    assert "home_loan" in types
+    assert "personal_loan" in types
+
+
+@pytest.mark.anyio
+async def test_personal_loan_summary_zero_balance_no_payments(client: AsyncClient):
+    """Personal loan with no payments: balance = original_amount, percent_paid = 0."""
+    r = await client.post("/accounts", json={
+        "account_number": "PL-ZERO-001",
+        "account_name": "Zero Balance Loan",
+        "bank_name": "CBA",
+        "account_type": "personal_loan",
+        "loan_original_amount": 15000.0,
+        "loan_interest_rate": 9.5,
+        "loan_term_years": 3,
+        "loan_repayment_type": "principal_and_interest",
+        "lender_name": "CBA",
+        "payment_frequency": "monthly",
+    })
+    assert r.status_code == 201
+    loan_id = r.json()["id"]
+
+    r2 = await client.get(f"/loans/{loan_id}/summary")
+    assert r2.status_code == 200
+    data = r2.json()
+    assert data["current_balance"] == 15000.0
+    assert data["percent_paid"] == 0.0
+    assert data["account_type"] == "personal_loan"
+    assert data["lender_name"] == "CBA"
+    assert data["payment_frequency"] == "monthly"
+
+
+@pytest.mark.anyio
+async def test_personal_loan_404_not_a_loan(client: AsyncClient):
+    """GET /loans/{id}/summary returns 404 for a bank account."""
+    r = await client.post("/accounts", json={
+        "account_number": "BANK-NOTLOAN",
+        "account_name": "Regular Bank",
+        "bank_name": "Westpac",
+        "account_type": "bank",
+    })
+    bank_id = r.json()["id"]
+    r2 = await client.get(f"/loans/{bank_id}/summary")
+    assert r2.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_personal_loan_history_empty(client: AsyncClient):
+    """GET /loans/{id}/history returns empty list for a new personal loan with no transactions."""
+    r = await client.post("/accounts", json={
+        "account_number": "PL-HIST-001",
+        "account_name": "History Loan",
+        "bank_name": "Macquarie",
+        "account_type": "personal_loan",
+        "loan_original_amount": 8000.0,
+    })
+    loan_id = r.json()["id"]
+    r2 = await client.get(f"/loans/{loan_id}/history")
+    assert r2.status_code == 200
+    assert r2.json() == []
+
+
+@pytest.mark.anyio
+async def test_personal_loan_seed_categories_exist(client: AsyncClient):
+    """Personal Loan Interest and Personal Loan Payment categories are seeded."""
+    r = await client.get("/categories")
+    assert r.status_code == 200
+    names = {c["name"] for c in r.json()}
+    assert "Personal Loan Interest" in names
+    assert "Personal Loan Payment" in names
+
+
+@pytest.mark.anyio
+async def test_personal_loan_update_fields(client: AsyncClient):
+    """PUT /accounts/{id} updates lender_name and loan_notes for a personal loan."""
+    r = await client.post("/accounts", json={
+        "account_number": "PL-UPD-001",
+        "account_name": "Update Test Loan",
+        "bank_name": "NAB",
+        "account_type": "personal_loan",
+        "loan_original_amount": 3000.0,
+        "lender_name": "NAB",
+    })
+    assert r.status_code == 201
+    loan_id = r.json()["id"]
+
+    r2 = await client.put(f"/accounts/{loan_id}", json={
+        "lender_name": "Updated Lender",
+        "loan_notes": "Refinanced in 2026",
+        "payment_frequency": "fortnightly",
+    })
+    assert r2.status_code == 200
+    data = r2.json()
+    assert data["lender_name"] == "Updated Lender"
+    assert data["loan_notes"] == "Refinanced in 2026"
+    assert data["payment_frequency"] == "fortnightly"
