@@ -276,11 +276,17 @@ async def lifespan(app: FastAPI):
                     "AND REFERENCED_TABLE_NAME = 'transactions'"
                 ))
                 if fk_exists.scalar() == 0:
-                    await conn.execute(text(
-                        "ALTER TABLE transactions ADD CONSTRAINT IF NOT EXISTS fk_tx_parent "
-                        "FOREIGN KEY (parent_transaction_id) REFERENCES transactions(id) ON DELETE CASCADE"
-                    ))
-                    logger.info("Migration: added FK fk_tx_parent on transactions.parent_transaction_id")
+                    try:
+                        await conn.execute(text(
+                            "ALTER TABLE transactions ADD CONSTRAINT fk_tx_parent "
+                            "FOREIGN KEY (parent_transaction_id) REFERENCES transactions(id) ON DELETE CASCADE"
+                        ))
+                        logger.info("Migration: added FK fk_tx_parent on transactions.parent_transaction_id")
+                    except Exception as fk_err:
+                        if "Duplicate" in str(fk_err) or "1061" in str(fk_err):
+                            logger.debug("Migration: FK fk_tx_parent already exists")
+                        else:
+                            logger.warning("Migration: FK fk_tx_parent failed (non-fatal): %s", fk_err)
         except Exception as e:
             logger.warning("Migration: split columns failed (non-fatal): %s", e)
 
