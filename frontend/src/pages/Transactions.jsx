@@ -92,11 +92,21 @@ function SplitDialog({ tx, categories, loans, onClose, onSaved }) {
     }
   };
 
-  const nativeSelectCls = 'flex h-8 w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
+  const fieldCls = 'flex h-9 w-full rounded-md border border-input bg-white px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
+  const labelCls = 'text-[11px] font-medium uppercase tracking-wide text-slate-400 mb-1 block';
+  const activeLoans = loans.filter(l => l.status === 'active');
+  const txCategories = categories.filter(c => c.category_type === tx.tx_type);
+
+  // Fill the first empty amount with the outstanding remainder.
+  const fillRemainder = (i) => {
+    const others = rows.reduce((sum, r, idx) => idx === i ? sum : sum + (parseFloat(r.amount) || 0), 0);
+    const val = Math.round((tx.tx_amount - others) * 100) / 100;
+    if (val > 0) setRow(i, 'amount', String(val));
+  };
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Split Transaction</DialogTitle>
         </DialogHeader>
@@ -110,78 +120,107 @@ function SplitDialog({ tx, categories, loans, onClose, onSaved }) {
           </p>
         </div>
 
-        {/* Split rows */}
-        <div className="space-y-2">
+        {/* Split cards */}
+        <div className="space-y-3">
           {rows.map((row, i) => (
-            <div key={i} className="grid grid-cols-12 gap-2 items-center">
-              <div className="col-span-4">
-                <input
-                  className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  placeholder="Description"
-                  value={row.description}
-                  onChange={e => setRow(i, 'description', e.target.value)}
-                />
-              </div>
-              <div className="col-span-2">
-                <input
-                  type="number" min="0.01" step="0.01"
-                  className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  placeholder="Amount"
-                  value={row.amount}
-                  onChange={e => setRow(i, 'amount', e.target.value)}
-                />
-              </div>
-              <div className="col-span-3">
-                <select className={nativeSelectCls} value={row.category_id}
-                  onChange={e => setRow(i, 'category_id', e.target.value)}>
-                  <option value="">— category</option>
-                  {categories.filter(c => c.category_type === tx.tx_type).sort((a,b) => a.name.localeCompare(b.name)).map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="col-span-2">
-                <select className={nativeSelectCls} value={row.lending_loan_id}
-                  onChange={e => {
-                    setRow(i, 'lending_loan_id', e.target.value);
-                    if (e.target.value) {
-                      setRow(i, 'lending_tx_type', tx.tx_type === 'Expense' ? 'disbursement' : 'repayment');
-                    } else {
-                      setRow(i, 'lending_tx_type', '');
-                    }
-                  }}>
-                  <option value="">— loan</option>
-                  {loans.filter(l => l.status === 'active').map(l => (
-                    <option key={l.id} value={l.id}>{l.loan_name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="col-span-1 flex justify-center">
+            <div key={i} className="rounded-lg border border-slate-200 bg-slate-50/40 p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-600">Split {i + 1}</span>
                 <button
                   type="button"
                   disabled={rows.length <= 2}
                   onClick={() => removeRow(i)}
+                  title="Remove this split"
                   className="text-slate-300 hover:text-red-500 disabled:opacity-20 disabled:cursor-not-allowed"
                 >
-                  <Trash2 size={14} />
+                  <Trash2 size={15} />
                 </button>
               </div>
+
+              <div>
+                <label className={labelCls}>Description</label>
+                <input
+                  className={fieldCls}
+                  placeholder={tx.tx_desc}
+                  value={row.description}
+                  onChange={e => setRow(i, 'description', e.target.value)}
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-1">
+                  <label className={labelCls}>Amount</label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-400">$</span>
+                    <input
+                      type="number" min="0.01" step="0.01"
+                      className={cn(fieldCls, 'pl-6')}
+                      placeholder="0.00"
+                      value={row.amount}
+                      onChange={e => setRow(i, 'amount', e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="col-span-2">
+                  <label className={labelCls}>Category</label>
+                  <select className={fieldCls} value={row.category_id}
+                    onChange={e => setRow(i, 'category_id', e.target.value)}>
+                    <option value="">— Uncategorised</option>
+                    <CategoryOptions categories={txCategories} />
+                  </select>
+                </div>
+              </div>
+
+              {activeLoans.length > 0 && (
+                <div>
+                  <label className={labelCls}>Loan (optional)</label>
+                  <select className={fieldCls} value={row.lending_loan_id}
+                    onChange={e => {
+                      setRow(i, 'lending_loan_id', e.target.value);
+                      if (e.target.value) {
+                        setRow(i, 'lending_tx_type', tx.tx_type === 'Expense' ? 'disbursement' : 'repayment');
+                      } else {
+                        setRow(i, 'lending_tx_type', '');
+                      }
+                    }}>
+                    <option value="">— None</option>
+                    {activeLoans.map(l => (
+                      <option key={l.id} value={l.id}>{l.loan_name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           ))}
         </div>
 
         {/* Add row */}
         <button type="button" onClick={addRow}
-          className="text-xs text-blue-600 hover:text-blue-800 mt-2">
+          className="text-sm text-blue-600 hover:text-blue-800 mt-3 font-medium">
           + Add split
         </button>
 
         {/* Remainder */}
-        <div className={`text-sm font-medium mt-3 ${balanced ? 'text-green-700' : 'text-red-600'}`}>
-          {balanced
-            ? '✓ Balanced'
-            : `${remainder > 0 ? `$${remainder.toFixed(2)} remaining` : `$${Math.abs(remainder).toFixed(2)} over`}`
-          }
+        <div className={`flex items-center gap-2 text-sm font-medium mt-3 ${balanced ? 'text-green-700' : 'text-amber-600'}`}>
+          {balanced ? (
+            <span>✓ Balanced</span>
+          ) : (
+            <>
+              <span>
+                {remainder > 0 ? `$${remainder.toFixed(2)} remaining` : `$${Math.abs(remainder).toFixed(2)} over`}
+              </span>
+              {remainder > 0 && (
+                <button
+                  type="button"
+                  onClick={() => fillRemainder(rows.findIndex(r => !r.amount))}
+                  disabled={!rows.some(r => !r.amount)}
+                  className="text-xs text-blue-600 hover:text-blue-800 underline disabled:opacity-40 disabled:no-underline"
+                >
+                  fill remainder
+                </button>
+              )}
+            </>
+          )}
         </div>
 
         {/* Actions */}
