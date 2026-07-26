@@ -290,6 +290,19 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Migration: split columns failed (non-fatal): %s", e)
 
+        # Data backfill — split parents are "resolved" and must not show as
+        # uncategorised. Older splits were created before this rule existed.
+        try:
+            async with engine.begin() as conn:
+                res = await conn.execute(text(
+                    "UPDATE transactions SET is_categorised = TRUE "
+                    "WHERE is_split_parent = TRUE AND is_categorised = FALSE"
+                ))
+                if res.rowcount:
+                    logger.info("Backfill: marked %d split parent(s) as categorised", res.rowcount)
+        except Exception as e:
+            logger.warning("Backfill: split parent is_categorised failed (non-fatal): %s", e)
+
     # Seed default categories + rules (idempotent — skips existing)
     try:
         async with async_session_factory() as session:

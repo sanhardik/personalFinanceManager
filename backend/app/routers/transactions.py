@@ -157,6 +157,8 @@ async def get_transaction_count(db: AsyncSession = Depends(get_db)):
             func.count(Transaction.id).label("total"),
             func.sum(case((Transaction.is_categorised == False, 1), else_=0)).label("uncategorised"),
         )
+        # Only count top-level rows — split children are sub-rows, not list items.
+        .where(Transaction.parent_transaction_id.is_(None))
     )
     row = result.one()
     total = int(row.total or 0)
@@ -173,7 +175,14 @@ async def get_uncategorised_groups(db: AsyncSession = Depends(get_db)):
     """
     # Load all uncategorised transactions
     tx_result = await db.execute(
-        select(Transaction).where(Transaction.is_categorised == False).order_by(Transaction.tx_date.desc())
+        select(Transaction)
+        .where(
+            Transaction.is_categorised == False,
+            # Split children are sub-rows and split parents are resolved — neither
+            # belongs in the categorise drawer.
+            Transaction.parent_transaction_id.is_(None),
+        )
+        .order_by(Transaction.tx_date.desc())
     )
     transactions = tx_result.scalars().all()
 
@@ -530,8 +539,10 @@ async def split_transaction(
         await db.delete(child)
     await db.flush()
 
-    # Mark parent
+    # Mark parent. A split parent is "resolved" — its categorisation is delegated
+    # to its children — so it must no longer count/display as uncategorised.
     tx.is_split_parent = True
+    tx.is_categorised = True
 
     # Create children
     for i, split in enumerate(body.splits):
@@ -604,6 +615,9 @@ async def unsplit_transaction(
     for child in list(tx.splits):
         await db.delete(child)
     tx.is_split_parent = False
+    # Restoring a normal transaction: its uncategorised status is once again driven
+    # by whether it has a category of its own.
+    tx.is_categorised = tx.category_id is not None
     await db.commit()
 
     db.expire(tx, ["category", "transfer_account", "lending_loan", "splits"])

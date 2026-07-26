@@ -287,3 +287,72 @@ async def test_resplit_replaces_children(client: AsyncClient, db_session):
     assert len(data["splits"]) == 3
     assert "First A" not in descs
     assert "New A" in descs
+
+
+# ── Uncategorised accounting ──────────────────────────────────
+
+@pytest.mark.anyio
+async def test_split_parent_marked_categorised(client: AsyncClient, db_session):
+    """A split parent is 'resolved' — its own is_categorised flips to True on split."""
+    acc_id = await _make_account(client, _next_suffix())
+    tx_id = await _insert_tx(db_session, client, acc_id, amount=1000.0, desc="Resolve me")
+
+    r = await client.post(f"/transactions/{tx_id}/split", json={"splits": [
+        {"description": "A", "amount": 600.0},
+        {"description": "B", "amount": 400.0},
+    ]})
+    assert r.status_code == 200, r.text
+    assert r.json()["is_categorised"] is True
+
+
+@pytest.mark.anyio
+async def test_split_parent_not_counted_uncategorised(client: AsyncClient, db_session):
+    """Splitting must drop the uncategorised count by 1 (parent resolved, children not
+    in the top-level count universe) — not inflate it via uncategorised children."""
+    acc_id = await _make_account(client, _next_suffix())
+    tx_id = await _insert_tx(db_session, client, acc_id, amount=1000.0, desc="Count me")
+
+    before = (await client.get("/transactions/count")).json()["uncategorised"]
+
+    r = await client.post(f"/transactions/{tx_id}/split", json={"splits": [
+        {"description": "A", "amount": 600.0},
+        {"description": "B", "amount": 400.0},
+    ]})
+    assert r.status_code == 200, r.text
+
+    after = (await client.get("/transactions/count")).json()["uncategorised"]
+    assert after == before - 1
+
+
+@pytest.mark.anyio
+async def test_split_parent_absent_from_uncategorised_groups(client: AsyncClient, db_session):
+    """A split parent (and its children) must not appear in the categorise drawer groups."""
+    acc_id = await _make_account(client, _next_suffix())
+    tx_id = await _insert_tx(db_session, client, acc_id, amount=800.0, desc="Grouped payment")
+
+    await client.post(f"/transactions/{tx_id}/split", json={"splits": [
+        {"description": "A", "amount": 500.0},
+        {"description": "B", "amount": 300.0},
+    ]})
+
+    groups = (await client.get("/transactions/uncategorised-groups")).json()
+    all_descs = {g.get("description") or g.get("pattern") for g in groups}
+    assert "Grouped payment" not in all_descs
+    assert "A" not in all_descs and "B" not in all_descs
+
+
+@pytest.mark.anyio
+async def test_unsplit_restores_uncategorised(client: AsyncClient, db_session):
+    """Removing a split reverts the parent's is_categorised from its own category_id."""
+    acc_id = await _make_account(client, _next_suffix())
+    tx_id = await _insert_tx(db_session, client, acc_id, amount=500.0, desc="Undo me")
+
+    await client.post(f"/transactions/{tx_id}/split", json={"splits": [
+        {"description": "A", "amount": 300.0},
+        {"description": "B", "amount": 200.0},
+    ]})
+
+    r = await client.delete(f"/transactions/{tx_id}/split")
+    assert r.status_code == 200, r.text
+    # Parent had no category of its own → uncategorised again after unsplit
+    assert r.json()["is_categorised"] is False

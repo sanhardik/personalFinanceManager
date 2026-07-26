@@ -830,7 +830,11 @@ export default function Transactions() {
                                   <Scissors size={13} />
                                 </button>
                               )}
-                              {editingCategoryTxId === tx.id ? (
+                              {tx.is_split_parent ? (
+                                <span className="text-xs text-indigo-600 italic">
+                                  Split into {tx.splits?.length ?? ''}
+                                </span>
+                              ) : editingCategoryTxId === tx.id ? (
                                 <div ref={selectRef} className="flex items-center gap-1 flex-wrap">
                                   <select
                                     autoFocus={!awaitingTransferAccount}
