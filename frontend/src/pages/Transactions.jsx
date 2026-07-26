@@ -26,7 +26,8 @@ import { cn } from '@/lib/utils';
 
 const SESSION_KEY = 'categorise_streak';
 
-function SplitDialog({ tx, categories, loans, onClose, onSaved }) {
+function SplitDialog({ tx, categories, loans, accounts, onClose, onSaved }) {
+  const blankRow = { description: tx.tx_desc, amount: '', category_id: '', lending_loan_id: '', lending_tx_type: '', transfer_account_id: '' };
   const [rows, setRows] = useState(() => {
     if (tx.splits && tx.splits.length >= 2) {
       return tx.splits.map(s => ({
@@ -35,12 +36,10 @@ function SplitDialog({ tx, categories, loans, onClose, onSaved }) {
         category_id: s.category_id ? String(s.category_id) : '',
         lending_loan_id: s.lending_loan_id ? String(s.lending_loan_id) : '',
         lending_tx_type: s.lending_tx_type || '',
+        transfer_account_id: s.transfer_account_id ? String(s.transfer_account_id) : '',
       }));
     }
-    return [
-      { description: tx.tx_desc, amount: '', category_id: '', lending_loan_id: '', lending_tx_type: '' },
-      { description: tx.tx_desc, amount: '', category_id: '', lending_loan_id: '', lending_tx_type: '' },
-    ];
+    return [{ ...blankRow }, { ...blankRow }];
   });
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -49,7 +48,7 @@ function SplitDialog({ tx, categories, loans, onClose, onSaved }) {
     setRows(prev => prev.map((r, idx) => idx === i ? { ...r, [key]: val } : r));
 
   const addRow = () =>
-    setRows(prev => [...prev, { description: tx.tx_desc, amount: '', category_id: '', lending_loan_id: '', lending_tx_type: '' }]);
+    setRows(prev => [...prev, { ...blankRow }]);
 
   const removeRow = (i) =>
     setRows(prev => prev.filter((_, idx) => idx !== i));
@@ -67,6 +66,7 @@ function SplitDialog({ tx, categories, loans, onClose, onSaved }) {
         category_id: r.category_id ? parseInt(r.category_id) : null,
         lending_loan_id: r.lending_loan_id ? parseInt(r.lending_loan_id) : null,
         lending_tx_type: r.lending_tx_type || null,
+        transfer_account_id: r.transfer_account_id ? parseInt(r.transfer_account_id) : null,
       }));
       const updated = await splitTransaction(tx.id, splits);
       onSaved(updated);
@@ -94,7 +94,11 @@ function SplitDialog({ tx, categories, loans, onClose, onSaved }) {
 
   const fieldCls = 'flex h-9 w-full rounded-md border border-input bg-white px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
   const labelCls = 'text-[11px] font-medium uppercase tracking-wide text-slate-400 mb-1 block';
+  const isExpense = tx.tx_type === 'Expense';
+  // Money out → personal loans the user is paying back (linked via transfer_account_id).
+  // Money in  → lending loans the user lent out (linked via lending_loan_id).
   const activeLoans = loans.filter(l => l.status === 'active');
+  const personalLoans = (accounts || []).filter(a => a.account_type === 'personal_loan');
   const txCategories = categories.filter(c => c.category_type === tx.tx_type);
 
   // Fill the first empty amount with the outstanding remainder.
@@ -171,24 +175,43 @@ function SplitDialog({ tx, categories, loans, onClose, onSaved }) {
                 </div>
               </div>
 
-              {activeLoans.length > 0 && (
-                <div>
-                  <label className={labelCls}>Loan (optional)</label>
-                  <select className={fieldCls} value={row.lending_loan_id}
-                    onChange={e => {
-                      setRow(i, 'lending_loan_id', e.target.value);
-                      if (e.target.value) {
-                        setRow(i, 'lending_tx_type', tx.tx_type === 'Expense' ? 'disbursement' : 'repayment');
-                      } else {
+              {isExpense ? (
+                personalLoans.length > 0 && (
+                  <div>
+                    <label className={labelCls}>Personal loan (optional)</label>
+                    <select className={fieldCls} value={row.transfer_account_id}
+                      onChange={e => {
+                        setRow(i, 'transfer_account_id', e.target.value);
+                        // Clear any lending link — money out repays a personal loan.
+                        setRow(i, 'lending_loan_id', '');
                         setRow(i, 'lending_tx_type', '');
-                      }
-                    }}>
-                    <option value="">— None</option>
-                    {activeLoans.map(l => (
-                      <option key={l.id} value={l.id}>{l.loan_name}</option>
-                    ))}
-                  </select>
-                </div>
+                      }}>
+                      <option value="">— None</option>
+                      {personalLoans.map(a => (
+                        <option key={a.id} value={a.id}>
+                          {a.account_name}{a.lender_name ? ` — ${a.lender_name}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )
+              ) : (
+                activeLoans.length > 0 && (
+                  <div>
+                    <label className={labelCls}>Loan (optional)</label>
+                    <select className={fieldCls} value={row.lending_loan_id}
+                      onChange={e => {
+                        setRow(i, 'lending_loan_id', e.target.value);
+                        setRow(i, 'transfer_account_id', '');
+                        setRow(i, 'lending_tx_type', e.target.value ? 'repayment' : '');
+                      }}>
+                      <option value="">— None</option>
+                      {activeLoans.map(l => (
+                        <option key={l.id} value={l.id}>{l.loan_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )
               )}
             </div>
           ))}
@@ -962,6 +985,9 @@ export default function Transactions() {
                                 {child.lending_loan_name && (
                                   <span className="text-xs text-indigo-600 ml-0.5">→ {child.lending_loan_name}</span>
                                 )}
+                                {child.transfer_account_name && (
+                                  <span className="text-xs text-indigo-600 ml-0.5">→ {child.transfer_account_name}</span>
+                                )}
                               </div>
                             </TableCell>
                           </TableRow>
@@ -1010,6 +1036,7 @@ export default function Transactions() {
           tx={splitTx}
           categories={categories}
           loans={loans}
+          accounts={accounts}
           onClose={() => setSplitTx(null)}
           onSaved={handleSplitSaved}
         />

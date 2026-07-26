@@ -356,3 +356,43 @@ async def test_unsplit_restores_uncategorised(client: AsyncClient, db_session):
     assert r.status_code == 200, r.text
     # Parent had no category of its own → uncategorised again after unsplit
     assert r.json()["is_categorised"] is False
+
+
+# ── Personal-loan linkage (money-out splits) ──────────────────
+
+@pytest.mark.anyio
+async def test_split_child_links_personal_loan(client: AsyncClient, db_session):
+    """A money-out split child linked to a personal-loan account carries
+    transfer_account_id, and that payment reduces the loan's balance."""
+    suffix = _next_suffix()
+    # Personal loan the user is paying back
+    r = await client.post("/accounts", json={
+        "account_number": f"PL-SPLIT-{suffix}",
+        "account_name": "Car Loan",
+        "bank_name": "NAB",
+        "account_type": "personal_loan",
+        "loan_original_amount": 10000.0,
+        "lender_name": "NAB",
+    })
+    assert r.status_code == 201, r.text
+    loan_id = r.json()["id"]
+
+    acc_id = await _make_account(client, suffix)
+    tx_id = await _insert_tx(
+        db_session, client, acc_id,
+        amount=1000.0, tx_type="Expense", desc="Combined bill + loan",
+    )
+
+    r = await client.post(f"/transactions/{tx_id}/split", json={"splits": [
+        {"description": "Groceries", "amount": 400.0},
+        {"description": "Car loan repayment", "amount": 600.0, "transfer_account_id": loan_id},
+    ]})
+    assert r.status_code == 200, r.text
+    children = r.json()["splits"]
+    linked = [c for c in children if c["transfer_account_id"] == loan_id]
+    assert len(linked) == 1
+    assert linked[0]["tx_amount"] == 600.0
+
+    # The 600 repayment reduces the personal loan balance (10000 - 600).
+    summary = (await client.get(f"/loans/{loan_id}/summary")).json()
+    assert summary["current_balance"] == 9400.0

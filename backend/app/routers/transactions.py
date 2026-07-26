@@ -559,6 +559,7 @@ async def split_transaction(
             category_id=split.category_id,
             lending_loan_id=split.lending_loan_id,
             lending_tx_type=split.lending_tx_type,
+            transfer_account_id=split.transfer_account_id,
             parent_transaction_id=tx_id,
             is_split_parent=False,
         )

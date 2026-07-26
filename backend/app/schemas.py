@@ -264,6 +264,9 @@ class SplitItem(BaseModel):
     category_id: int | None = None
     lending_loan_id: int | None = None
     lending_tx_type: str | None = Field(default=None, pattern="^(disbursement|repayment)$")
+    # Links a money-out split to a personal-loan account (a loan the user is paying
+    # back). Counts toward that loan's balance the same way normal repayments do.
+    transfer_account_id: int | None = None
 
 
 class SplitRequest(BaseModel):
